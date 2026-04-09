@@ -2,3 +2,5 @@ etc/kolla/passwords.yml
 venv
 admin-open*
 os
+.vault_pass
+clouds.yaml

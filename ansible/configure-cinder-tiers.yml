@@ -10,7 +10,7 @@
         name: "NVMe_Tier"
         description: "High-speed NVMe storage for databases and ML inference"
         extra_specs:
-          volume_backend_name: "lvm-nvme"
+          volume_backend_name: "NVME_Storage"
 
     - name: Create SSD Standard Tier
       openstack.cloud.volume_type:
@@ -19,7 +19,7 @@
         name: "SSD_Tier"
         description: "Standard SSD storage for OS boot disks"
         extra_specs:
-          volume_backend_name: "lvm-ssd"
+          volume_backend_name: "SSD_Storage"
 
     - name: Create HDD Massive Tier (8TB Pool)
       openstack.cloud.volume_type:
@@ -28,4 +28,4 @@
         name: "HDD_Massive_Tier"
         description: "High-capacity storage on Node-03 for bulk data"
         extra_specs:
-          volume_backend_name: "lvm-hdd"
+          volume_backend_name: "HDD_Storage"
