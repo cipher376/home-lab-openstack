@@ -1,0 +1,10 @@
+ansible_ssh_user: ubuntu
+docker_custom_config:
+  data-root: "/var/lib/docker" # Keep Docker on the  os ssd
+
+physical_network_interface: "ens5"
+api_interface: "ens5"
+storage_interface: "ens5"
+tunnel_interface: "ens5"
+
+ansible_distribution_release: "bookworm" #Fix trixie unsupported error

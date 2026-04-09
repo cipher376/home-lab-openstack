@@ -1,0 +1,27 @@
+kolla_base_distro: "ubuntu"  # Containers will be Debian-based
+kolla_install_type: "binary"
+openstack_release: "2024.2"
+kolla_internal_vip_address: "172.16.0.254" # Pick a free IP in your home lab
+network_interface: "{{physical_network_interface}}" # Your management NIC
+neutron_external_interface: "none" # Your provider NIC
+enable_neutron_provider_networks: "yes"
+api_interface: "{{ physical_network_interface }}"
+storage_interface: "{{ physical_network_interface }}"
+
+enable_haproxy: "yes"
+
+enable_cinder: "yes"
+enable_cinder_backend_lvm: "yes"
+enable_iscsid: "yes"
+
+# Add this to bypass the strict OS version check
+kolla_verify_package_version: "no"
+
+# This forces Kolla to ignore the "unsupported" distribution release name
+ignore_external_config: "yes"
+
+# Force toolbox to run as root to bypass Ubuntu 24.04 PAM issues
+# kolla_toolbox_user: "root"
+
+# # Disable pylogd (optional, avoids another potential container issue)
+# kolla_enable_pylogd: "no"

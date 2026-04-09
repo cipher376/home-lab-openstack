@@ -1,0 +1,55 @@
+---
+- name: Prepare Nodes for Kolla-Ansible
+  hosts: all
+  become: true
+  tasks:
+    - name: Ensure 'ubuntu' user is in the 'docker' and 'sudo' groups
+      user:
+        name: ubuntu
+        groups: docker,sudo
+        append: yes
+
+    - name: Set NOPASSWD for ubuntu user in sudoers
+      lineinfile:
+        path: /etc/sudoers.d/90-kolla-fix
+        line: "ubuntu ALL=(ALL) NOPASSWD:ALL"
+        validate: '/usr/sbin/visudo -cf %s'
+        create: yes
+        mode: '0440'
+
+    - name: Fix Docker socket permissions for Ubuntu 24.04
+      file:
+        path: /var/run/docker.sock
+        owner: root
+        group: docker
+        mode: '0666'
+
+    - name: Clear any PAM/faillock authentication locks
+      command: faillock --user ubuntu --reset
+      changed_when: false
+
+    - name: Ensure SSH passwordless logic is clean
+      lineinfile:
+        path: /etc/ssh/sshd_config
+        regexp: '^#?PubkeyAuthentication'
+        line: 'PubkeyAuthentication yes'
+      notify: Restart SSH
+
+    - name: Add %docker group to sudoers for NOPASSWD
+      lineinfile:
+        path: /etc/sudoers.d/99-docker-nopasswd
+        line: "%docker ALL=(ALL) NOPASSWD: ALL"
+        create: yes
+        mode: '0440'
+        validate: '/usr/sbin/visudo -cf %s'
+
+
+    - name: Reset PAM failed login counters (The "Clean Slate" fix)
+      command: faillock --user ubuntu --reset
+      changed_when: false
+
+  handlers:
+    - name: Restart SSH
+      service:
+        name: ssh
+        state: restarted

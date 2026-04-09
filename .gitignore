@@ -1,0 +1,4 @@
+etc/kolla/passwords.yml
+venv
+admin-open*
+os

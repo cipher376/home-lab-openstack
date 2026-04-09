@@ -1,0 +1,31 @@
+---
+- name: Configure OpenStack Cinder Storage Tiers
+  hosts: localhost
+  connection: local
+  tasks:
+    - name: Create NVMe Extreme Performance Tier
+      openstack.cloud.volume_type:
+        cloud: kolla-admin
+        state: present
+        name: "NVMe_Tier"
+        description: "High-speed NVMe storage for databases and ML inference"
+        extra_specs:
+          volume_backend_name: "lvm-nvme"
+
+    - name: Create SSD Standard Tier
+      openstack.cloud.volume_type:
+        cloud: kolla-admin
+        state: present
+        name: "SSD_Tier"
+        description: "Standard SSD storage for OS boot disks"
+        extra_specs:
+          volume_backend_name: "lvm-ssd"
+
+    - name: Create HDD Massive Tier (8TB Pool)
+      openstack.cloud.volume_type:
+        cloud: kolla-admin
+        state: present
+        name: "HDD_Massive_Tier"
+        description: "High-capacity storage on Node-03 for bulk data"
+        extra_specs:
+          volume_backend_name: "lvm-hdd"
