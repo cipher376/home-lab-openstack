@@ -1,0 +1,2 @@
+#cinder_backup_extra_volumes:
+#  - "/var/lib/cinder/backups:/var/lib/cinder/backups:rw"

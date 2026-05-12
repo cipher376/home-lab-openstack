@@ -1,0 +1,134 @@
+alerting:
+  alertmanagers:
+  - static_configs:
+    - targets:
+      - 172.16.0.15:9093
+global:
+  evaluation_interval: 15s
+  scrape_interval: 60s
+  scrape_timeout: 10s
+scrape_configs:
+- basic_auth:
+    password: gVm6E4qqhjkds
+    username: admin
+  job_name: prometheus
+  static_configs:
+  - targets:
+    - 172.16.0.15:9091
+- job_name: node
+  static_configs:
+  - targets:
+    - 172.16.0.15:9100
+  - targets:
+    - 172.16.0.10:9100
+  - targets:
+    - 172.16.0.20:9100
+- job_name: mysqld
+  static_configs:
+  - targets:
+    - 172.16.0.15:9104
+- job_name: haproxy
+  static_configs:
+  - targets:
+    - 172.16.0.15:9101
+- job_name: rabbitmq
+  static_configs:
+  - targets:
+    - 172.16.0.15:15692
+- job_name: memcached
+  static_configs:
+  - targets:
+    - 172.16.0.15:9150
+- job_name: cadvisor
+  static_configs:
+  - targets:
+    - 172.16.0.15:18080
+  - targets:
+    - 172.16.0.10:18080
+  - targets:
+    - 172.16.0.20:18080
+- job_name: fluentd
+  static_configs:
+  - targets:
+    - 172.16.0.15:24231
+  - targets:
+    - 172.16.0.10:24231
+  - targets:
+    - 172.16.0.20:24231
+- honor_labels: true
+  job_name: openstack_exporter
+  scrape_interval: 60s
+  scrape_timeout: 45s
+  static_configs:
+  - targets:
+    - 172.16.0.254:9198
+- job_name: elasticsearch_exporter
+  scrape_interval: 60s
+  static_configs:
+  - targets:
+    - 172.16.0.15:9108
+- honor_labels: true
+  job_name: blackbox_exporter
+  metrics_path: /probe
+  relabel_configs:
+  - regex: ([^:]+):([^:]+):(.+)
+    replacement: ${1}
+    source_labels:
+    - __address__
+    target_label: service
+  - regex: ([^:]+):([^:]+):(.+)
+    replacement: ${2}
+    source_labels:
+    - __address__
+    target_label: __param_module
+  - source_labels:
+    - __param_module
+    target_label: module
+  - regex: ([^:]+):([^:]+):(.+)
+    replacement: ${3}
+    source_labels:
+    - __address__
+    target_label: __param_target
+  - source_labels:
+    - __param_target
+    target_label: instance
+  - replacement: 172.16.0.15:9115
+    target_label: __address__
+  static_configs:
+  - targets:
+    - cinder:os_endpoint:http://172.16.0.254:8776
+    - glance:os_endpoint:http://172.16.0.254:9292
+    - grafana:http_2xx:http://172.16.0.254:3000
+    - heat:os_endpoint:http://172.16.0.254:8004
+    - heat_cfn:os_endpoint:http://172.16.0.254:8000
+    - horizon:http_2xx:http://172.16.0.254
+    - keystone:os_endpoint:http://172.16.0.254:5000
+    - neutron:os_endpoint:http://172.16.0.254:9696
+    - nova:os_endpoint:http://172.16.0.254:8774
+    - opensearch:http_2xx:http://172.16.0.254:9200
+    - opensearch_dashboards:http_2xx_opensearch_dashboards:http://172.16.0.254:5601/api/status
+    - opensearch_dashboards_external:http_2xx_opensearch_dashboards:http://172.16.0.254:5601/api/status
+    - placement:os_endpoint:http://172.16.0.254:8780
+    - prometheus:http_2xx_prometheus:http://172.16.0.254:9091/-/healthy
+    - prometheus_alertmanager:http_2xx_alertmanager:http://172.16.0.254:9093
+    - rabbitmq_node-02:tcp_connect:172.16.0.15:5672
+    - skyline_apiserver:os_endpoint:http://172.16.0.254:9998
+    - skyline_console:os_endpoint:http://172.16.0.254:9999
+- honor_labels: true
+  job_name: libvirt_exporter
+  scrape_interval: 60s
+  static_configs:
+  - targets:
+    - 172.16.0.10:9177
+  - targets:
+    - 172.16.0.15:9177
+  - targets:
+    - 172.16.0.20:9177
+- job_name: alertmanager
+  static_configs:
+  - targets:
+    - 172.16.0.15:9093
+- job_name: proxysql
+  static_configs:
+  - targets:
+    - 172.16.0.15:6070

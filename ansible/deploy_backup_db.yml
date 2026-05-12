@@ -1,0 +1,150 @@
+- name: Deploy SeaweedFS via Docker
+  hosts: storage
+  become: true
+  vars_files:
+    - secrets.yaml
+  vars:
+    seaweed_image: "chrislusf/seaweedfs:latest"
+    master_ip: "node-02.lan" # Node 02
+    seaweed_config_dir: "/etc/seaweedfs"
+
+  tasks:
+    # - name: Ensure Docker is installed
+    #   apt:
+    #     name: docker.io
+    #     state: present
+    #     update_cache: yes
+
+    - name: Ensure SeaweedFS config directory exists
+      become: yes
+      ansible.builtin.file:
+        path: "{{ seaweed_config_dir }}"
+        owner: ubuntu
+        group: ubuntu
+        mode: '0755'
+        recurse: yes
+
+    - name: Generate security.toml with JWT enabled
+      ansible.builtin.copy:
+        dest: "{{ seaweed_config_dir }}/security.toml"
+        content: |
+          # Global security settings for SeaweedFS
+          # ===============================================================
+          # 1. JWT KEYS FOR MASTER AND VOLUME (File Read/Write)
+          # ===============================================================
+          # Used by Master to generate JWTs and by Volume servers to validate them.
+          # Protects the HTTP endpoints for file uploads, downloads, and deletes.
+          
+          [jwt.signing]
+          key = "{{ seaweed_jwt_key_master_volume }}"
+          expires_after_seconds = 10 
+
+          # Optional: JWT for read operations on volumes.
+          [jwt.signing.read]
+          key = "{{ seaweed_jwt_key_master_volume }}"                   # Required for reads
+          expires_after_seconds = 10
+          
+          # ===============================================================
+          # 2. JWT KEYS FOR THE FILER (REST API)
+          # ===============================================================
+          # Starting with version 2.84, Filer HTTP endpoints are secured with their own JWTs.
+          # These keys are validated by the Filer; they MUST be known to any JWT issuer
+          # (e.g., the S3 gateway or your own application that issues tokens).
+          
+          [jwt.filer_signing]
+          key = "{{ seaweed_jwt_key_filer }}"                          # Required for write HTTP calls
+          expires_after_seconds = 10
+          
+          [jwt.filer_signing.read]
+          key = "{{ seaweed_jwt_key_filer }}"                           # Required for read HTTP calls
+          expires_after_seconds = 10
+
+          # ===============================================================
+          # 3. OPTIONAL: CORS & UI ACCESS (Adjust for your environment)
+          # ===============================================================
+          [cors.allowed_origins]
+          values = ["*"]
+
+          [access]
+          ui = false  # Disable volume web UI when JWT is active (recommended)
+
+
+          [jwt.filer_permission]
+          enabled = true
+
+          [jwt.master_permission]
+          enabled = true
+
+          [jwt.volume_permission]
+          enabled = true
+
+        mode: '644' # Restricted access to root/service user
+
+    - name: Secure the security.toml file specifically
+      become: yes
+      ansible.builtin.file:
+        path: "{{ seaweed_config_dir }}/security.toml"
+        owner: ubuntu
+        group: ubuntu
+        mode: '644' 
+
+# --- NODE 2: MASTER, FILER, AND S3 GATEWAY ---
+
+    - name: Copy S3 security config
+      copy:
+        dest: "/etc/seaweedfs/s3.json"
+        content: |
+          {
+            "identities": [
+              {
+                "name": "openstack-cinder",
+                "credentials": [
+                  {
+                    "accessKey": "{{ seaweed_s3_access_key }}",
+                    "secretKey": "{{ seaweed_s3_secret_key }}"
+                  }
+                ],
+                "actions": ["Admin", "Read", "Write", "List", "Tagging"]
+              }
+            ]
+          }
+      when: inventory_hostname == 'node-02'
+
+    - name: Run SeaweedFS Server Container with Security
+      docker_container:
+        name: seaweed_server
+        image: "{{ seaweed_image }}"
+        state: started
+        restart_policy: always
+        network_mode: host
+        volumes:
+          - "{{ seaweed_config_dir }}/s3.json:{{ seaweed_config_dir }}/s3.json"
+          - "{{ seaweed_config_dir }}/security.toml:{{ seaweed_config_dir }}/security.toml"
+        command: "server -ip={{ ansible_host }} -s3 -filer -s3.config={{ seaweed_config_dir }}/s3.json"
+      when: inventory_hostname == 'node-02'
+
+
+# --- NODE 3: VOLUME SERVER (THE STORAGE) ---
+    - name: Run SeaweedFS Volume Container
+      docker_container:
+        name: seaweed_volume
+        image: "{{ seaweed_image }}"
+        state: started
+        restart_policy: always
+        network_mode: host
+        volumes:
+          - "/mnt/seaweed_data:/data"
+          - "{{ seaweed_config_dir }}/security.toml:{{ seaweed_config_dir }}/security.toml"
+        command: "volume -master={{ master_ip }}:9333 -dir=/data -max=0 -ip={{ ansible_host }}"
+      when: inventory_hostname == 'node-03'
+
+
+
+    - name: Verify S3 Endpoint is reachable
+      shell: |
+        AWS_ACCESS_KEY_ID={{ seaweed_s3_access_key }} \
+        AWS_SECRET_ACCESS_KEY={{ seaweed_s3_secret_key }} \
+        aws --endpoint-url http://{{ node-02.lan }}:8333 s3 ls
+      register: s3_check
+      failed_when: s3_check.rc != 0
+      delegate_to: 'localhost'

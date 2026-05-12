@@ -15,7 +15,6 @@ node-02 ansible_host=node-02.lan ansible_user=ubuntu
 
 [compute]
 node-01 ansible_host=node-01.lan ansible_user=ubuntu
-node-02 ansible_host=node-02.lan ansible_user=ubuntu
 node-03 ansible_host=node-03.lan ansible_user=ubuntu
 
 [monitoring]
@@ -70,6 +69,18 @@ monitoring
 
 [prometheus:children]
 monitoring
+
+
+[freezer-api:children]
+control
+
+[freezer-scheduler:children]
+control
+
+[freezer-agent:children]
+control
+compute
+
 
 [telegraf:children]
 compute
@@ -622,3 +633,7 @@ letsencrypt
 
 [letsencrypt-lego:children]
 letsencrypt
+
+
+
+

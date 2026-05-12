@@ -3,8 +3,7 @@ docker_custom_config:
   data-root: "/var/lib/docker" # Keep Docker on the  os ssd
 
 physical_network_interface: "enp7s0"
-api_interface: "enp7s0"
-storage_interface: "enp7s0"
-tunnel_interface: "enp7s0"
+# api_interface: "enp7s0"
+# storage_interface: "enp7s0"
+# tunnel_interface: "enp7s0"
 
-ansible_distribution_release: "bookworm" #Fix trixie unsupported error

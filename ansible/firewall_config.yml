@@ -1,0 +1,71 @@
+- name: Secure SeaweedFS and OpenStack Ports
+  hosts: storage
+  become: true
+  tasks:
+    - name: Ensure UFW is installed
+      apt:
+        name: ufw
+        state: present
+
+    # - name: Allow SeaweedFS S3 API (Port 8333) from Management Subnet
+    #   community.general.ufw:
+    #     rule: allow
+    #     from_ip: 172.16.0.0/16
+    #     to_port: 8333
+    #     proto: tcp
+    #     comment: "SeaweedFS S3 API"
+
+    # - name: Allow SeaweedFS Master (Port 9333) from Management Subnet
+    #   community.general.ufw:
+    #     rule: allow
+    #     from_ip: 172.16.0.0/16
+    #     to_port: 9333
+    #     proto: tcp
+    #     comment: "SeaweedFS Master"
+
+    # - name: Allow SeaweedFS Volume Traffic (Port 18080)
+    #   community.general.ufw:
+    #     rule: allow
+    #     from_ip: 172.16.0.0/16
+    #     to_port: 18080
+    #     proto: tcp
+    #     comment: "SeaweedFS Volume Server"
+
+    - name: Apply Master-only Firewall rules
+      community.general.ufw:
+        rule: allow
+        from_ip: 172.16.0.0/16
+        to_port: "{{ item }}"
+        proto: tcp
+      loop: [8333, 9333, 8888]
+      when: inventory_hostname == 'node-02'
+
+    - name: Safety Net - Allow All Internal Management Traffic
+      community.general.ufw:
+        rule: allow
+        from_ip: 172.16.30.0/24
+        comment: "Southwest internal OpenStack nodes"
+
+    - name: Safety Net - Allow All Internal Management Traffic
+      community.general.ufw:
+        rule: allow
+        from_ip: 172.16.20.0/24
+        comment: "Management internal OpenStack nodes"
+
+    - name: Safety Net - Allow All Internal Management Traffic
+      community.general.ufw:
+        rule: allow
+        from_ip: 172.16.0.0/24
+        comment: "Local network to physical nodes"
+
+    - name: Safety Net - Allow All Internal Management Traffic
+      community.general.ufw:
+        rule: allow
+        from_ip: 172.16.5.0/24
+        comment: "Local network to physical nodes"
+
+    - name: Enable UFW and set default deny
+      community.general.ufw:
+        state: enabled
+        policy: deny
+        direction: incoming

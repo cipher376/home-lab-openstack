@@ -48,6 +48,18 @@
       command: faillock --user ubuntu --reset
       changed_when: false
 
+    - name: Enable IPv4 forwarding in sysctl
+      ansible.posix.sysctl:
+        name: net.ipv4.ip_forward
+        value: '1'
+        sysctl_set: yes
+        state: present
+        reload: yes
+        
+    - name: Verify the setting is active
+      command: sysctl net.ipv4.ip_forward
+      register: sysctl_result
+
   handlers:
     - name: Restart SSH
       service:

@@ -3,25 +3,95 @@ kolla_install_type: "binary"
 openstack_release: "2024.2"
 kolla_internal_vip_address: "172.16.0.254" # Pick a free IP in your home lab
 network_interface: "{{physical_network_interface}}" # Your management NIC
-neutron_external_interface: "none" # Your provider NIC
+neutron_external_interface: "vlan20" # Your provider NIC
 enable_neutron_provider_networks: "yes"
-api_interface: "{{ physical_network_interface }}"
-storage_interface: "{{ physical_network_interface }}"
+api_interface: "{{physical_network_interface}}"
+storage_interface: "{{physical_network_interface}}"
+tunnel_interface: "vlan30"
+network_address_family: "ipv4"
+
+enable_horizon: "yes"
+enable_skyline: "no"          # For the new UI
 
 enable_haproxy: "yes"
+
+rabbitmq_management_port: "15671"
 
 enable_cinder: "yes"
 enable_cinder_backend_lvm: "yes"
 enable_iscsid: "yes"
 
+enable_cinder_backup: "yes"
+cinder_backup_driver: "s3"
+cinder_backup_s3_url: "http://node-02.lan:8333"
+cinder_backup_s3_access_key: "{{ seaweed_s3_access_key }}"
+cinder_backup_s3_secret_key: "{{ seaweed_s3_secret_key }}"
+cinder_backup_s3_bucket: "cinder-backups"
+cinder_backup_s3_use_ssl: "no"
+
+
+
+fluentd_config_directory: "/etc/fluentd"
+
+
+nova_libvirt_privileged: "yes"
+nova_compute_privileged: "yes"
+enable_neutron_bgp_dragent: "yes"
+
+
+
+
+default_container_dimensions:
+  mem_limit: 1g   # limits each container to 2GB max
+
+mariadb_container_dimensions:
+  mem_limit: 768m
+
+
+
+
+# Required for Zun to talk to the Docker daemon on compute nodes
+docker_configure_for_zun: "no"
+
+# Recommended: Enable Barbican if you want to manage container secrets securely
+enable_barbican: "no"
+
+
+
+
+enable_ceilometer: "no"
+enable_aodh: "no"
+enable_gnocchi: "no"
+enable_cloudkitty: "no"
+enable_heat: "no"           # Orchestration – probably not needed for basic VMs
+enable_magnum: "no"         # Kubernetes – unless you teach containers
+enable_octavia: "no"        # Load balancing
+enable_designate: "no"      # DNS
+enable_grafana: "no"        # Monitoring – you can use CLI instead
+enable_prometheus: "no"     # Monitoring
+enable_elasticsearch: "no"  # Logging (likely the Java hog)
+enable_kibana: "no"
+enable_zun: "no"
+enable_kuryr: "no"
+enable_freezer: "no"        # deprecated
+enable_etcd: "no"
+enable_fluentd: "no"
+
+# Enable Karbor service for backup and restore
+enable_karbor: "no"         # deprecated
+# Karbor requires a dashboard plugin to be visible in Horizon
+# enable_horizon_karbor: "{{ enable_horizon | default('yes') }}"
+
+
 # Add this to bypass the strict OS version check
 kolla_verify_package_version: "no"
 
 # This forces Kolla to ignore the "unsupported" distribution release name
-ignore_external_config: "yes"
+ignore_external_config: "no"
 
-# Force toolbox to run as root to bypass Ubuntu 24.04 PAM issues
-# kolla_toolbox_user: "root"
+enable_central_logging: "no"  # For activating all logging facilities
+enable_prometheus_node_exporter: "no"
+enable_prometheus_rabbitmq_exporter: "no"
+enable_prometheus_fluentd_integration: "no"
 
-# # Disable pylogd (optional, avoids another potential container issue)
-# kolla_enable_pylogd: "no"
+

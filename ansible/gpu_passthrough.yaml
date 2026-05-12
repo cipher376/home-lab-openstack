@@ -1,0 +1,443 @@
+---
+- name: "OpenStack GPU Passthrough - Full Configuration"
+  hosts: compute
+  become: true
+  vars:
+    gpu_keyword: "NVIDIA"
+    mapping_name: "NVIDIA-GPU"
+    blacklisted_modules:
+      - nvidia
+      - nvidia_drm
+      - nvidia_modeset
+      - nvidia_uvm
+      - nouveau
+      - i2c_nvidia_gpu
+      - i2c_ccgx_ucsi
+      - ucsi_ccg
+      - snd_hda_intel
+      - snd_hda_codec_hdmi
+      - xhci_pci
+
+    vfio_modules:
+      - vfio
+      - vfio_iommu_type1
+      - vfio_pci
+      - vfio_virqfd
+
+  tasks:
+
+# ------------------------------------------------------------------ #
+#  SECTION 1 — DISCOVER GPU HARDWARE                                   #
+# ------------------------------------------------------------------ #
+
+    - name: "[Discovery] Get full lspci output"
+      command: lspci -Dnn
+      register: lspci_output
+      changed_when: false
+
+    - name: "[Discovery] Extract GPU PCI addresses"
+      set_fact:
+        gpu_pci_ids: >-
+          {{
+            lspci_output.stdout_lines
+            | select('search', gpu_keyword)
+            | map('regex_replace', '^([0-9a-f]{4}:[0-9a-f]{2}:[0-9a-f]{2}\.[0-9a-f]).*', '\1')
+            | list
+          }}
+
+    - name: "[Discovery] Fail if no GPU found"
+      fail:
+        msg: >
+          No NVIDIA GPU found on {{ inventory_hostname }}.
+          Check that the GPU is physically present and visible to lspci.
+      when: gpu_pci_ids | length == 0
+
+    - name: "[Discovery] Extract vendor and device IDs"
+      set_fact:
+        gpu_vendor_ids: >-
+          {{
+            lspci_output.stdout_lines
+            | select('search', gpu_keyword)
+            | map('regex_replace', '.*\[([0-9a-f]{4}:[0-9a-f]{4})\].*', '\1')
+            | list
+          }}
+
+    - name: "[Discovery] Get subsystem ID for primary GPU function"
+      shell: |
+        lspci -vmm -n -s {{ gpu_pci_ids | first }} | \
+        awk '/^SVendor/{sv=$2} /^SDevice/{sd=$2} END{print sv":"sd}'
+      register: subsystem_raw
+      changed_when: false
+
+    - name: "[Discovery] Fail if subsystem ID not found"
+      fail:
+        msg: >
+          Could not determine subsystem ID for {{ gpu_pci_ids | first }}.
+          Check lspci -v output manually.
+      when: subsystem_raw.stdout | trim == ""
+
+    - name: "[Discovery] Set subsystem ID fact"
+      set_fact:
+        mapping_subsystem_id: "{{ subsystem_raw.stdout | trim }}"
+
+    - name: "[Discovery] Find IOMMU group for primary GPU function"
+      shell: |
+        SHORT_ID=$(echo "{{ gpu_pci_ids | first }}" | sed 's/0000://')
+        for d in /sys/kernel/iommu_groups/*/devices/*; do
+          dev=$(basename $d)
+          if [ "$dev" = "{{ gpu_pci_ids | first }}" ] || [ "$dev" = "$SHORT_ID" ]; then
+            basename $(dirname $(dirname $d))
+          fi
+        done | sort -n | tail -1
+      register: iommu_group_raw
+      changed_when: false
+
+    - name: "[Discovery] Fail if IOMMU group not found"
+      fail:
+        msg: >
+          Could not find IOMMU group for {{ gpu_pci_ids | first }}.
+          Ensure intel_iommu=on is set in GRUB and the node has been rebooted.
+      when: iommu_group_raw.stdout | trim == ""
+
+    - name: "[Discovery] Set IOMMU group fact"
+      set_fact:
+        mapping_iommu_group: "{{ iommu_group_raw.stdout | trim }}"
+
+    - name: "[Discovery] Verify all GPU functions IOMMU assignments"
+      shell: |
+        for pci_id in {{ gpu_pci_ids | join(' ') }}; do
+          SHORT_ID=$(echo "$pci_id" | sed 's/0000://')
+          group=$(
+            for d in /sys/kernel/iommu_groups/*/devices/*; do
+              dev=$(basename $d)
+              if [ "$dev" = "$pci_id" ] || [ "$dev" = "$SHORT_ID" ]; then
+                basename $(dirname $(dirname $d))
+              fi
+            done | sort -n | tail -1
+          )
+          printf "%s -> iommu_group %s\n" "$pci_id" "$group"
+        done
+      register: iommu_verify
+      changed_when: false
+
+    - name: "[Discovery] Verify GPU IOMMU groups are clean"
+      shell: |
+        ISSUES=""
+        GPU_IDS="{{ gpu_pci_ids | join(' ') }}"
+
+        for pci_id in $GPU_IDS; do
+          SHORT_ID=$(echo "$pci_id" | sed 's/0000://')
+
+          group=$(
+            for d in /sys/kernel/iommu_groups/*/devices/*; do
+              dev=$(basename $d)
+              if [ "$dev" = "$pci_id" ] || [ "$dev" = "$SHORT_ID" ]; then
+                basename $(dirname $(dirname $d))
+              fi
+            done | sort -n | tail -1
+          )
+
+          if [ -z "$group" ]; then
+            ISSUES="$ISSUES\nCould not find IOMMU group for $pci_id"
+            continue
+          fi
+
+          members=$(ls /sys/kernel/iommu_groups/$group/devices/)
+
+          for member in $members; do
+            is_gpu=0
+            for gpu_id in $GPU_IDS; do
+              SHORT_GPU=$(echo "$gpu_id" | sed 's/0000://')
+              [ "$member" = "$gpu_id" ] || [ "$member" = "$SHORT_GPU" ] && is_gpu=1 && break
+            done
+            [ "$is_gpu" = "1" ] && continue
+
+            dev_class=$(lspci -ns "$member" 2>/dev/null | awk '{print $2}' | cut -d: -f1)
+            if [ "$dev_class" = "0604" ] || [ "$dev_class" = "0600" ]; then
+              printf "INFO: %s in group %s is a bridge (class %s) - acceptable\n" \
+                "$member" "$group" "$dev_class"
+              continue
+            fi
+
+            ISSUES="$ISSUES\nGroup $group contains non-GPU non-bridge device: $member (class $dev_class)"
+          done
+        done
+
+        if [ -n "$ISSUES" ]; then
+          printf "%b\n" "$ISSUES"
+          exit 1
+        fi
+
+        echo "All GPU functions are in clean IOMMU groups"
+      register: iommu_isolation_check
+      changed_when: false
+      failed_when: iommu_isolation_check.rc != 0
+
+    - name: "[Discovery] Display isolation check result"
+      debug:
+        msg: "{{ iommu_isolation_check.stdout_lines }}"
+
+    - name: "[Discovery] Summary of discovered values"
+      debug:
+        msg:
+          - "gpu_pci_ids:          {{ gpu_pci_ids }}"
+          - "gpu_vendor_ids:       {{ gpu_vendor_ids }}"
+          - "mapping_subsystem_id: {{ mapping_subsystem_id }}"
+          - "mapping_iommu_group:  {{ mapping_iommu_group }}"
+          - "iommu_assignments:    {{ iommu_verify.stdout_lines }}"
+
+# ------------------------------------------------------------------ #
+#  SECTION 2 — IOMMU AND GRUB  WITH POWER MANAGEMENT                                        #
+# ------------------------------------------------------------------ #
+    - name: "[Passthrough] Disable GPU power management on host"
+      copy:
+        dest: /etc/udev/rules.d/99-gpu-power.rules
+        mode: '0644'
+        content: |
+          ACTION=="add", SUBSYSTEM=="pci", ATTR{vendor}=="0x10de", ATTR{power/control}=="*", ATTR{power/control}="on"
+      notify:
+        - update_initramfs
+        - reboot_node
+
+    - name: "[Passthrough] Disable PCIe ASPM for GPU on host"
+      copy:
+        dest: /etc/modprobe.d/disable-gpu-aspm.conf
+        mode: '0644'
+        content: |
+          options pcie_aspm policy=performance
+      notify:
+        - update_initramfs
+        - reboot_node
+
+    - name: "[Passthrough] Add pci-stub binding for GPU functions"
+      copy:
+        dest: /etc/modprobe.d/pci-stub.conf
+        mode: '0644'
+        content: |
+          softdep nouveau pre: vfio-pci
+          softdep nvidia pre: vfio-pci
+          softdep snd_hda_intel pre: vfio-pci
+          softdep xhci_pci pre: vfio-pci
+          softdep i2c_nvidia_gpu pre: vfio-pci
+      notify:
+        - update_initramfs
+        - reboot_node
+
+    - name: "[Passthrough] Load pci-stub module at boot"
+      lineinfile:
+        path: /etc/modules
+        line: pci-stub
+        state: present
+      notify:
+        - update_initramfs
+        - reboot_node
+
+    - name: "[Passthrough] Disable GPU runtime power management"
+      copy:
+        dest: /etc/tmpfiles.d/gpu-power.conf
+        mode: '0644'
+        content: |
+          w /sys/bus/pci/devices/0000:01:00.0/power/control - - - - on
+          w /sys/bus/pci/devices/0000:01:00.1/power/control - - - - on
+          w /sys/bus/pci/devices/0000:01:00.2/power/control - - - - on
+          w /sys/bus/pci/devices/0000:01:00.3/power/control - - - - on
+
+    - name: "[GRUB] Check current kernel cmdline"
+      command: cat /proc/cmdline
+      register: current_cmdline
+      changed_when: false
+
+    - name: "[GRUB] Display current cmdline"
+      debug:
+        msg: "{{ current_cmdline.stdout }}"
+
+    - name: "[GRUB] Ensure IOMMU and passthrough parameters are set"
+      lineinfile:
+        path: /etc/default/grub
+        regexp: '^GRUB_CMDLINE_LINUX_DEFAULT='
+        line: 'GRUB_CMDLINE_LINUX_DEFAULT="quiet intel_iommu=on iommu=pt pcie_acs_override=downstream,multifunction video=efifb:off video=vesafb:off initcall_blacklist=sysfb_init pcie_aspm=off pci-stub.ids=10de:2191,10de:1aeb,10de:1aec,10de:1aed vfio-pci.ids=10de:2191,10de:1aeb,10de:1aec,10de:1aed module_blacklist={{ blacklisted_modules | join(",") }}"'
+      register: grub_changed
+      notify:
+        - update_grub
+        - update_initramfs
+        - reboot_node
+
+# ------------------------------------------------------------------ #
+#  SECTION 3 — DRIVER BLACKLIST                                         #
+# ------------------------------------------------------------------ #
+
+    - name: "[Blacklist] Blacklist NVIDIA and conflicting drivers"
+      copy:
+        dest: /etc/modprobe.d/blacklist-nvidia.conf
+        mode: '0644'
+        content: |
+          {% for mod in blacklisted_modules %}
+          blacklist {{ mod }}
+          install {{ mod }} /bin/false
+          {% endfor %}
+      register: blacklist_changed
+      notify:
+        - update_initramfs
+        - reboot_node
+
+# ------------------------------------------------------------------ #
+#  SECTION 4 — VFIO CONFIGURATION                                       #
+# ------------------------------------------------------------------ #
+
+    - name: "[VFIO] Configure VFIO PCI IDs and disable VGA"
+      copy:
+        dest: /etc/modprobe.d/vfio.conf
+        mode: '0644'
+        content: |
+          options vfio-pci ids={{ gpu_vendor_ids | join(',') }} disable_vga=1
+          softdep nouveau pre: vfio-pci
+          softdep nvidia pre: vfio-pci
+          softdep snd_hda_intel pre: vfio-pci
+          softdep xhci_pci pre: vfio-pci
+          softdep i2c_nvidia_gpu pre: vfio-pci
+      register: vfio_conf_changed
+      notify:
+        - update_initramfs
+        - reboot_node
+
+    - name: "[VFIO] Allow unsafe interrupts"
+      copy:
+        dest: /etc/modprobe.d/vfio-unsafe-interrupts.conf
+        mode: '0644'
+        content: |
+          options vfio_iommu_type1 allow_unsafe_interrupts=1
+      notify:
+        - update_initramfs
+        - reboot_node
+
+    - name: "[VFIO] Load VFIO modules at boot"
+      copy:
+        dest: /etc/modules-load.d/vfio.conf
+        mode: '0644'
+        content: |
+          {% for mod in vfio_modules %}
+          {{ mod }}
+          {% endfor %}
+      register: modules_changed
+      notify:
+        - update_initramfs
+        - reboot_node
+
+    - name: "[VFIO] Add VFIO modules to /etc/modules"
+      lineinfile:
+        path: /etc/modules
+        line: "{{ item }}"
+        state: present
+      loop: "{{ vfio_modules }}"
+      notify:
+        - update_initramfs
+        - reboot_node
+
+
+# ------------------------------------------------------------------ #
+#  SECTION 5.5 — FORCE REBOOT IF KERNEL CONFIG CHANGED                #
+# ------------------------------------------------------------------ #
+    - name: "[Passthrough] Verify GPU visible after reboot"
+      shell: lspci -nnk | grep -A3 "01:00.0"
+      register: gpu_check
+      changed_when: false
+
+    - name: "[Passthrough] Display GPU binding"
+      debug:
+        msg: "{{ gpu_check.stdout_lines }}"
+
+    - name: "[Reboot] Check if reboot is required"
+      set_fact:
+        reboot_required: >-
+          {{
+            grub_changed.changed or
+            blacklist_changed.changed or
+            vfio_conf_changed.changed or
+            modules_changed.changed
+          }}
+
+    - name: "[Reboot] Display reboot status"
+      debug:
+        msg: "Reboot required: {{ reboot_required }}"
+
+    - name: "[Reboot] Flush handlers before reboot"
+      meta: flush_handlers
+
+    - name: "[Reboot] Reboot node to apply VFIO and IOMMU changes"
+      reboot:
+        msg: "Rebooting to apply IOMMU, VFIO and passthrough changes"
+        reboot_timeout: 600
+        post_reboot_delay: 30
+      when: reboot_required
+
+    - name: "[Reboot] Check current GPU binding before conditional reboot"
+      shell: lspci -nnk | grep -A3 "{{ gpu_pci_ids | first | regex_replace('0000:', '') }}"
+      register: gpu_binding_pre
+      changed_when: false
+
+    - name: "[Reboot] Force reboot if vfio-pci not yet active"
+      reboot:
+        msg: "Rebooting to activate VFIO binding"
+        reboot_timeout: 600
+        post_reboot_delay: 30
+      when:
+        - not reboot_required
+        - "'vfio-pci' not in gpu_binding_pre.stdout"
+
+    
+
+# ------------------------------------------------------------------ #
+#  SECTION 6 — POST REBOOT VERIFICATION                                #
+# ------------------------------------------------------------------ #
+
+    - name: "[Verify] Re-check GPU driver binding post reboot"
+      shell: lspci -nnk | grep -A3 "{{ gpu_pci_ids | first | regex_replace('0000:', '') }}"
+      register: gpu_binding_post
+      changed_when: false
+
+    - name: "[Verify] Display GPU driver binding"
+      debug:
+        msg: "{{ gpu_binding_post.stdout_lines }}"
+
+    - name: "[Verify] Check VFIO modules are loaded"
+      shell: lsmod | grep vfio || true
+      register: vfio_loaded
+      changed_when: false
+      failed_when: false
+
+    - name: "[Verify] Display VFIO module status"
+      debug:
+        msg: >-
+          {{
+            vfio_loaded.stdout_lines
+            if vfio_loaded.stdout | length > 0
+            else ['VFIO modules not loaded']
+          }}
+
+    - name: "[Verify] Check dmesg for VFIO errors"
+      shell: dmesg | grep -i vfio | tail -20
+      register: vfio_dmesg
+      changed_when: false
+      failed_when: false
+
+    - name: "[Verify] Display VFIO dmesg output"
+      debug:
+        msg: "{{ vfio_dmesg.stdout_lines }}"
+
+    
+
+# ------------------------------------------------------------------ #
+#  HANDLERS                                                             #
+# ------------------------------------------------------------------ #
+
+  handlers:
+    - name: update_grub
+      command: update-grub
+
+    - name: update_initramfs
+      command: update-initramfs -u -k all
+
+    - name: reboot_node
+      debug:
+        msg: "Reboot handled by explicit reboot tasks"
+

@@ -4,8 +4,7 @@ docker_custom_config:
 
 
 physical_network_interface: "eno1"
-api_interface: "eno1"
-storage_interface: "eno1"
-tunnel_interface: "eno1"
+# api_interface: "eno1"
+# storage_interface: "eno1"
+# tunnel_interface: "eno1"
 
-ansible_distribution_release: "bookworm" #Fix trixie unsupported error

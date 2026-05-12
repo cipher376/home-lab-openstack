@@ -1,31 +1,21 @@
 ---
-- name: Configure OpenStack Cinder Storage Tiers
+- name: Register Cinder Volume Types
   hosts: localhost
   connection: local
+  gather_facts: false
+
+  vars:
+    storage_tiers:
+      - { name: "ncs-nvme", backend: "NVME_Storage" }
+      - { name: "ncs-ssd",  backend: "SSD_Storage" }
+      - { name: "ncs-hdd",  backend: "HDD_Storage" }
+
   tasks:
-    - name: Create NVMe Extreme Performance Tier
+    - name: Create Volume Types and Link to Backends
       openstack.cloud.volume_type:
-        cloud: kolla-admin
         state: present
-        name: "NVMe_Tier"
-        description: "High-speed NVMe storage for databases and ML inference"
+        name: "{{ item.name }}"
+        is_public: true
         extra_specs:
-          volume_backend_name: "NVME_Storage"
-
-    - name: Create SSD Standard Tier
-      openstack.cloud.volume_type:
-        cloud: kolla-admin
-        state: present
-        name: "SSD_Tier"
-        description: "Standard SSD storage for OS boot disks"
-        extra_specs:
-          volume_backend_name: "SSD_Storage"
-
-    - name: Create HDD Massive Tier (8TB Pool)
-      openstack.cloud.volume_type:
-        cloud: kolla-admin
-        state: present
-        name: "HDD_Massive_Tier"
-        description: "High-capacity storage on Node-03 for bulk data"
-        extra_specs:
-          volume_backend_name: "HDD_Storage"
+          volume_backend_name: "{{ item.backend }}"
+      loop: "{{ storage_tiers }}"
