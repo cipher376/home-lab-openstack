@@ -1,0 +1,17 @@
+
+unbound_package: "unbound"
+unbound_control_package: "unbound-control"
+unbound_control_luci: "luci-app-unbound"
+
+# Service names
+unbound_service: "unbound"
+dnsmasq_service: "dnsmasq"
+
+# Configuration paths
+unbound_config_path: "/etc/unbound/unbound.conf"
+unbound_conf_dir: "/etc/unbound"
+dhcp_config_path: "/etc/config/dhcp"
+unbound_uci_path: "/etc/config/unbound"
+
+# Backup directory
+backup_dir: "/root/ansible_backups"

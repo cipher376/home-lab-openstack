@@ -1,0 +1,4 @@
+config unbound
+    {% for record in unbound_local_records %}
+    list local_data '{{ record.name }} A {{ record.ip }}'
+    {% endfor %}

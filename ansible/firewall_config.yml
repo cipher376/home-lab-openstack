@@ -1,71 +1,63 @@
 - name: Secure SeaweedFS and OpenStack Ports
-  hosts: storage
+  hosts: nodes
   become: true
+  gather_facts: true
+  vars:
+    # CHANGE THIS to match your home lab's IP subnet
+    management_subnets:
+      - "172.16.5.0/24"
+      - "172.16.10.0/24"
+      - "172.16.20.0/24"
+      - "172.16.30.0/24"
+  
   tasks:
     - name: Ensure UFW is installed
       apt:
         name: ufw
         state: present
+        update_cache: yes
 
-    # - name: Allow SeaweedFS S3 API (Port 8333) from Management Subnet
-    #   community.general.ufw:
-    #     rule: allow
-    #     from_ip: 172.16.0.0/16
-    #     to_port: 8333
-    #     proto: tcp
-    #     comment: "SeaweedFS S3 API"
+    - name: Reset UFW to default settings (Deny Incoming, Allow Outgoing)
+      ufw:
+        state: reset
 
-    # - name: Allow SeaweedFS Master (Port 9333) from Management Subnet
-    #   community.general.ufw:
-    #     rule: allow
-    #     from_ip: 172.16.0.0/16
-    #     to_port: 9333
-    #     proto: tcp
-    #     comment: "SeaweedFS Master"
+    - name: Allow SSH from anywhere (Prevents locking yourself out)
+      ufw:
+        rule: allow
+        port: '22'
+        proto: tcp
 
-    # - name: Allow SeaweedFS Volume Traffic (Port 18080)
-    #   community.general.ufw:
-    #     rule: allow
-    #     from_ip: 172.16.0.0/16
-    #     to_port: 18080
-    #     proto: tcp
-    #     comment: "SeaweedFS Volume Server"
+    - name: Allow all traffic from designated management subnets
+      ufw:
+        rule: allow
+        from_ip: "{{ item }}"
+      loop: "{{ management_subnets }}"
 
-    - name: Apply Master-only Firewall rules
+    # Controller-specific Rules (Only applied to node-01)
+    - name: Open Public OpenStack Web/API ports on Controller
+      ufw:
+        rule: allow
+        port: "{{ item.port }}"
+        proto: tcp
+        comment: "{{ item.comment }}"
+      loop:
+        - { port: '80', comment: 'Horizon HTTP' }
+        - { port: '443', comment: 'Horizon HTTPS' }
+        - { port: '5000', comment: 'Keystone Identity API' }
+        - { port: '6080', comment: 'Nova VNC Proxy' }
+      when: inventory_hostname == 'node-01'
+
+    - name: Enable UFW firewall and enforce rules
+      ufw:
+        state: enabled
+
+    - name: Allow Seaweedfs Firewall rules
       community.general.ufw:
         rule: allow
         from_ip: 172.16.0.0/16
         to_port: "{{ item }}"
         proto: tcp
       loop: [8333, 9333, 8888]
-      when: inventory_hostname == 'node-02'
+      when: inventory_hostname == 'node-01'
 
-    - name: Safety Net - Allow All Internal Management Traffic
-      community.general.ufw:
-        rule: allow
-        from_ip: 172.16.30.0/24
-        comment: "Southwest internal OpenStack nodes"
-
-    - name: Safety Net - Allow All Internal Management Traffic
-      community.general.ufw:
-        rule: allow
-        from_ip: 172.16.20.0/24
-        comment: "Management internal OpenStack nodes"
-
-    - name: Safety Net - Allow All Internal Management Traffic
-      community.general.ufw:
-        rule: allow
-        from_ip: 172.16.0.0/24
-        comment: "Local network to physical nodes"
-
-    - name: Safety Net - Allow All Internal Management Traffic
-      community.general.ufw:
-        rule: allow
-        from_ip: 172.16.5.0/24
-        comment: "Local network to physical nodes"
-
-    - name: Enable UFW and set default deny
-      community.general.ufw:
-        state: enabled
-        policy: deny
-        direction: incoming
+   

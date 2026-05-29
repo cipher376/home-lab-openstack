@@ -1,0 +1,43 @@
+---
+- name: Install System Utilities and Storage Extensions across OpenStack Nodes
+  hosts: baremetal
+  become: yes
+  tasks:
+    - name: Load package definitions from variables file
+      include_vars:
+        file: packages.yml
+
+    - name: Run apt-get update to synchronize package indexes
+      apt:
+        update_cache: yes
+        cache_valid_time: 3600  # Avoid re-updating if run within the last hour
+
+    - name: Install core operating system and container engine liners
+      apt:
+        name: "{{ item }}"
+        state: present
+      loop: "{{ kolla_base_distro_packages }}"
+      when: kolla_base_distro_packages is defined
+
+    - name: Install system monitoring and network profiling tools
+      apt:
+        name: "{{ item }}"
+        state: present
+      loop: "{{ kolla_extra_system_utilities }}"
+      when: kolla_extra_system_utilities is defined
+
+    - name: Install custom SeaweedFS S3 / Python storage bindings
+      apt:
+        name: "{{ item }}"
+        state: present
+      loop: "{{ kolla_custom_storage_backend_packages }}"
+      when: kolla_custom_storage_backend_packages is defined
+    
+    - name: Install Python S3 SDK bindings and AWSCLI for SeaweedFS hooks
+      pip:
+        name:
+          - boto3
+          - botocore
+          - awscli      # <--- Add this line here
+        state: present
+        break_system_packages: yes

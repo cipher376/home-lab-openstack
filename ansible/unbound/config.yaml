@@ -1,0 +1,82 @@
+- name: Configure Unbound on OpenWrt with automatic package manager detection
+  hosts: router
+  gather_facts: false
+  
+  roles:
+    - community.openwrt.init
+  vars_files:
+    - vars.yml
+  
+  vars:
+    # Customize these variables
+    local_domain: "lan"
+    dnsmasq_alternative_port: 53535
+    unbound_forward_port: 53
+  tasks:
+
+    - name: Gather OpenWrt facts
+      community.openwrt.setup:
+    
+    - name: Install Unbound packages (apk)
+      community.openwrt.apk:
+        name: "{{ item }}"
+        state: present
+        update_cache: true
+      loop:
+        - unbound-daemon
+        - unbound-control
+        - bind-dig
+      loop_control:
+        label: "{{ item }}"
+    
+    
+    
+    - name: Configure dnsmasq port
+      community.openwrt.uci:
+        command: set
+        key: dhcp.@dnsmasq[0].port
+        value: "{{ dnsmasq_alternative_port }}"
+    
+    - name: Commit dnsmasq changes
+      community.openwrt.uci:
+        command: commit
+        path: dhcp
+    
+    - name: Restart dnsmasq
+      command: /etc/init.d/dnsmasq restart
+    
+    - name: Configure Unbound manually
+      blockinfile:
+        path: /etc/unbound/unbound.conf
+        block: |
+          server:
+              do-not-query-localhost: no
+              domain-insecure: "lan"
+              private-domain: "lan"
+              interface: 0.0.0.0
+              access-control: 172.16.0.0/12 allow
+          
+          forward-zone:
+              name: "lan"
+              forward-addr: 127.0.0.1@{{ dnsmasq_alternative_port }}
+        create: yes
+        backup: yes
+    
+    - name: Enable manual Unbound config
+      community.openwrt.uci:
+        command: set
+        key: unbound.@unbound[0].manual_conf
+        value: "1"
+    
+    - name: Commit Unbound changes
+      community.openwrt.uci:
+        command: commit
+        path: unbound
+    
+    - name: Restart Unbound
+      command: /etc/init.d/unbound restart
+    
+    - name: Verify resolution
+      command: dig @172.16.0.1 test.lan
+      register: test_result
+      failed_when: "'NXDOMAIN' in test_result.stdout"

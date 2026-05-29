@@ -1,6 +1,6 @@
 ---
 - name: Prepare Nodes for Kolla-Ansible
-  hosts: all
+  hosts: baremetal
   become: true
   tasks:
     - name: Ensure 'ubuntu' user is in the 'docker' and 'sudo' groups

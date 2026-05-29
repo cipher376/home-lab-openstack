@@ -3,7 +3,7 @@
 backup_driver = cinder.backup.drivers.s3.S3BackupDriver
 
 # Specific S3 settings for SeaweedFS
-backup_s3_endpoint_url = http://node-02.lan:8333
+backup_s3_endpoint_url = http://node-01.lan:8333
 backup_s3_store_access_key = {{ seaweed_s3_access_key }}
 backup_s3_store_secret_key = {{ seaweed_s3_secret_key }}
 backup_s3_store_bucket = cinder-backups

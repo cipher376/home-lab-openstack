@@ -111,7 +111,7 @@ scrape_configs:
     - placement:os_endpoint:http://172.16.0.254:8780
     - prometheus:http_2xx_prometheus:http://172.16.0.254:9091/-/healthy
     - prometheus_alertmanager:http_2xx_alertmanager:http://172.16.0.254:9093
-    - rabbitmq_node-02:tcp_connect:172.16.0.15:5672
+    - rabbitmq_node-01:tcp_connect:172.16.0.10:5672
     - skyline_apiserver:os_endpoint:http://172.16.0.254:9998
     - skyline_console:os_endpoint:http://172.16.0.254:9999
 - honor_labels: true

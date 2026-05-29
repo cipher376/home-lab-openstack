@@ -1,0 +1,12 @@
+---
+# ==============================================================================
+# NCS-CLOUD CLUSTER DEPLOYMENT ORCHESTRATION MANIFEST
+# ==============================================================================
+# Purpose: Ties together infrastructure baseline provisioning rules into a 
+#          unified master execution sequence for the home lab cluster.
+# ==============================================================================
+
+# 1. Configure cinder tiered storage and backup targets
+- name: Phase 1 - Configure Cinder tiered storage and backup targets
+  import_playbook: cinder_storage.yml
+

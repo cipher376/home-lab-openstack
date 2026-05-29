@@ -1,0 +1,83 @@
+---
+- name: Advanced Security Hardening for OpenStack Infrastructure
+  hosts: baremetal
+  become: yes
+  vars:
+    fail2ban_bantime: "3600"
+    fail2ban_maxretry: "5"
+
+  tasks:
+    # ==========================================================================
+    # 1. APPARMOR CONTAINMENT ENFORCEMENT
+    # ==========================================================================
+    - name: Ensure AppArmor is installed (Ubuntu Baseline)
+      apt:
+        name:
+          - apparmor
+          - apparmor-utils
+        state: present
+        update_cache: yes
+
+    - name: Verify AppArmor service is enabled and actively running
+      systemd:
+        name: apparmor
+        state: started
+        enabled: yes
+
+    # ==========================================================================
+    # 2. FAIL2BAN BRUTE-FORCE PROTECTION
+    # ==========================================================================
+    - name: Install Fail2Ban Daemon
+      apt:
+        name: fail2ban
+        state: present
+
+    - name: Configure Fail2Ban Local SSH Jail overrides
+      copy:
+        dest: /etc/fail2ban/jail.local
+        owner: root
+        group: root
+        mode: '0644'
+        content: |
+          [DEFAULT]
+          bantime = {{ fail2ban_bantime }}
+          maxretry = {{ fail2ban_maxretry }}
+          backend = auto
+
+          [sshd]
+          enabled = true
+          port = ssh
+          logpath = %(sshd_log)s
+          backend = %(sshd_backend)s
+      notify: Restart Fail2Ban
+
+    - name: Ensure Fail2Ban service is active and booted on startup
+      systemd:
+        name: fail2ban
+        state: started
+        enabled: yes
+
+    # ==========================================================================
+    # 3. DYNAMIC NETWORK SEGMENTATION SANITY AUDIT
+    # ==========================================================================
+    - name: Audit host to ensure host-specific Management Interface is present
+      fail:
+        msg: "CRITICAL: Management interface '{{ mgmt_interface }}' is missing or down on {{ inventory_hostname }}."
+      when: ansible_facts[mgmt_interface] is not defined
+
+    - name: Audit host to ensure Provider VLAN20 sub-interface is mapped and active
+      shell: "ip link show | grep -E 'vlan20|{{ mgmt_interface }}\\.20'"
+      register: vlan_check
+      ignore_errors: yes
+      changed_when: false
+
+    - name: Fail if Provider VLAN network pipeline is unconfigured
+      fail:
+        msg: "CRITICAL: Provider network interface (VLAN 20 link) could not be detected on {{ inventory_hostname }}."
+      when: vlan_check.rc != 0
+
+  handlers:
+    - name: Restart Fail2Ban
+      service:
+        name: fail2ban
+        state: restarted

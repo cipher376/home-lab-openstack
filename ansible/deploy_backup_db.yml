@@ -1,11 +1,11 @@
 - name: Deploy SeaweedFS via Docker
-  hosts: storage
+  hosts: nodes
   become: true
   vars_files:
     - secrets.yaml
   vars:
     seaweed_image: "chrislusf/seaweedfs:latest"
-    master_ip: "node-02.lan" # Node 02
+    master_ip: "node-01.lan" # Node 02
     seaweed_config_dir: "/etc/seaweedfs"
 
   tasks:
@@ -14,6 +14,34 @@
     #     name: docker.io
     #     state: present
     #     update_cache: yes
+
+    # NEW TASK: Stop existing SeaweedFS containers on all storage nodes
+    - name: Stop any existing SeaweedFS containers
+      docker_container:
+        name: "{{ item }}"
+        state: stopped
+      ignore_errors: yes
+      loop:
+        - seaweed_server
+        - seaweed_volume
+        - seaweed_master
+        - seaweed_filer
+      tags:
+        - stop_containers
+
+    # NEW TASK: Remove existing SeaweedFS containers
+    - name: Remove existing SeaweedFS containers
+      docker_container:
+        name: "{{ item }}"
+        state: absent
+      ignore_errors: yes
+      loop:
+        - seaweed_server
+        - seaweed_volume
+        - seaweed_master
+        - seaweed_filer
+      tags:
+        - remove_containers
 
     - name: Ensure SeaweedFS config directory exists
       become: yes
@@ -108,7 +136,7 @@
               }
             ]
           }
-      when: inventory_hostname == 'node-02'
+      when: inventory_hostname == 'node-01'
 
     - name: Run SeaweedFS Server Container with Security
       docker_container:
@@ -121,7 +149,7 @@
           - "{{ seaweed_config_dir }}/s3.json:{{ seaweed_config_dir }}/s3.json"
           - "{{ seaweed_config_dir }}/security.toml:{{ seaweed_config_dir }}/security.toml"
         command: "server -ip={{ ansible_host }} -s3 -filer -s3.config={{ seaweed_config_dir }}/s3.json"
-      when: inventory_hostname == 'node-02'
+      when: inventory_hostname == 'node-01'
 
 
 # --- NODE 3: VOLUME SERVER (THE STORAGE) ---
@@ -138,13 +166,14 @@
         command: "volume -master={{ master_ip }}:9333 -dir=/data -max=0 -ip={{ ansible_host }}"
       when: inventory_hostname == 'node-03'
 
-
-
     - name: Verify S3 Endpoint is reachable
       shell: |
         AWS_ACCESS_KEY_ID={{ seaweed_s3_access_key }} \
         AWS_SECRET_ACCESS_KEY={{ seaweed_s3_secret_key }} \
-        aws --endpoint-url http://{{ node-02.lan }}:8333 s3 ls
+        aws --endpoint-url http://node-01.lan:8333 s3 ls
       register: s3_check
       failed_when: s3_check.rc != 0
       delegate_to: 'localhost'
+      run_once: true
+      become: false
+

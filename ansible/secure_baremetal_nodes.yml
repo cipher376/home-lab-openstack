@@ -1,0 +1,58 @@
+---
+- name: Harden Baremetal Nodes for OpenStack Cluster Security
+  hosts: baremetal
+  become: yes
+  tasks:
+    # 1. OpenSSH Server Hardening
+    - name: Ensure SSH password authentication is disabled
+      lineinfile:
+        path: /etc/ssh/sshd_config
+        regexp: '^#?PasswordAuthentication'
+        line: 'PasswordAuthentication no'
+        state: present
+      notify: Restart SSH
+
+    - name: Disable SSH root login
+      lineinfile:
+        path: /etc/ssh/sshd_config
+        regexp: '^#?PermitRootLogin'
+        line: 'PermitRootLogin no'
+        state: present
+      notify: Restart SSH
+
+    # 2. Kernel Defenses (sysctl settings)
+    - name: Protect against spoofing (Enable Reverse Path Filtering)
+      sysctl:
+        name: net.ipv4.conf.all.rp_filter
+        value: '1'
+        state: present
+        reload: yes
+
+    - name: Disable ICMP redirect acceptance (Mitigates MitM attacks)
+      sysctl:
+        name: net.ipv4.conf.all.accept_redirects
+        value: '0'
+        state: present
+        reload: yes
+
+    # 3. Secure Shared Memory Access
+    - name: Restrict access to kernel logs (dmesg) to privileged users
+      sysctl:
+        name: kernel.dmesg_restrict
+        value: '1'
+        state: present
+        reload: yes
+
+    # 4. Global Storage Security
+    - name: Set secure default file creation mask (UMASK)
+      lineinfile:
+        path: /etc/login.defs
+        regexp: '^UMASK'
+        line: 'UMASK           027'
+        state: present
+
+  handlers:
+    - name: Restart SSH
+      service:
+        name: ssh
+        state: restarted

@@ -1,8 +1,12 @@
+
+[deployment]
+localhost  ansible_connection=local kolla_skip_distro_check=True
+
 # These initial groups are the only groups required to be modified. The
 # additional groups are for more control of the environment.
 [control]
 # These hostname must be resolvable from your deployment host
-node-02 ansible_host=node-02.lan ansible_user=ubuntu
+node-01 ansible_host=node-01.lan ansible_user=ubuntu
 
 
 
@@ -10,29 +14,58 @@ node-02 ansible_host=node-02.lan ansible_user=ubuntu
 # This can be the same as a host in the control group
 # Prodesk
 [network]
-node-02 ansible_host=node-02.lan ansible_user=ubuntu
+node-01 ansible_host=node-01.lan ansible_user=ubuntu
 
 
 [compute]
-node-01 ansible_host=node-01.lan ansible_user=ubuntu
+node-02 ansible_host=node-02.lan ansible_user=ubuntu
 node-03 ansible_host=node-03.lan ansible_user=ubuntu
 
 [monitoring]
-node-02 ansible_host=node-02.lan ansible_user=ubuntu
+node-01 ansible_host=node-01.lan ansible_user=ubuntu
 
 
 # When compute nodes and control nodes use different interfaces,
 # you need to comment out "api_interface" and other interfaces from the globals.yml
 # and specify like below:
-#compute01 neutron_external_interface=eth0 api_interface=em1 tunnel_interface=em1
-
+# compute01 neutron_external_interface=eth0 api_interface=em1 tunnel_interface=em1
 [storage]
 node-01 ansible_host=node-01.lan ansible_user=ubuntu
 node-02 ansible_host=node-02.lan ansible_user=ubuntu
 node-03 ansible_host=node-03.lan ansible_user=ubuntu
 
-[deployment]
-localhost       ansible_connection=local kolla_skip_distro_check=True
+
+[cinder-volume-multiple:children]
+storage
+
+[cinder-backup-multiple]
+node-03 ansible_host=node-03.lan ansible_user=ubuntu
+
+[nova-metadata]
+node-01 ansible_host=node-01.lan ansible_user=ubuntu
+
+[loadbalancer]
+node-01 ansible_host=node-01.lan ansible_user=ubuntu
+
+[mariadb]
+node-01 ansible_host=node-01.lan ansible_user=ubuntu
+
+# ==============================================================================
+# FORCE LOGGING BACKENDS OFF THE CONTROL NODE
+# ==============================================================================
+# For Kolla Caracal / Recent releases (OpenSearch backend):
+[opensearch]
+node-02 ansible_host=node-02.lan ansible_user=ubuntu
+
+# For older Kolla releases (Elasticsearch backend):
+[elasticsearch]
+node-02 ansible_host=node-02.lan ansible_user=ubuntu
+
+
+[kolla_toolbox:children]
+control
+storage
+network
 
 [baremetal:children]
 control
@@ -293,6 +326,19 @@ neutron
 [neutron-ovn-agent:children]
 compute
 network
+
+[neutron-periodic-worker:children]
+network
+
+[neutron-rpc-server:children]
+network
+
+[neutron-ovn-maintenance-worker:children]
+network
+
+[neutron-ovn-vpn-agent:children]
+network
+
 
 # Cinder
 [cinder-api:children]

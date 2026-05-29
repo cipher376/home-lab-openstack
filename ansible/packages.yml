@@ -1,0 +1,33 @@
+# ==============================================================================
+# KOLLA-ANSIBLE CONFIGURATION DEPLOYMENT SPECIFICATION - PACKAGES MANIFEST
+# ==============================================================================
+# Target Release: OpenStack 2024.2 (Caracal)
+# Architecture: Distributed Control/Compute NCS-Cloud Cluster Topology
+# Infrastructure Baseline: Ubuntu 24.04 LTS (Noble Numbat) Base Images
+# Purpose: Definitive package tracking, custom utilities, and backup hook bindings.
+# ==============================================================================
+
+# --- CORE OPERATING SYSTEM & CONTAINER ENGINE SYSTEM LINERS ---
+kolla_base_distro_packages:
+  - "python3-pip"
+  - "python3-setuptools"
+  - "python3-venv"
+  - "curl"
+  - "iproute2"
+  - "ca-certificates"
+  - "tar"
+
+# --- SYSTEM MONITORING, HARDWARE TRACING & PERFORMANCE PROFILING ---
+kolla_extra_system_utilities:
+  - "htop"
+  - "iotop"
+  - "sysstat"
+  - "tcpdump"
+  - "iputils-ping"
+  - "net-tools"
+  - "jq"
+
+# --- CUSTOM BACKEND RUNTIMES & DEPLOYMENT EXTENSIONS (SEAWEEDFS S3 / SWIFT) ---
+kolla_custom_storage_backend_packages:
+  - "rclone"
+  - "s3cmd"

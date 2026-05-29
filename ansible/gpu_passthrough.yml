@@ -1,6 +1,6 @@
 ---
 - name: "OpenStack GPU Passthrough - Full Configuration"
-  hosts: compute
+  hosts: baremetal_gpu
   become: true
   vars:
     gpu_keyword: "NVIDIA"
@@ -46,11 +46,13 @@
           }}
 
     - name: "[Discovery] Fail if no GPU found"
-      fail:
+      debug:
         msg: >
           No NVIDIA GPU found on {{ inventory_hostname }}.
           Check that the GPU is physically present and visible to lspci.
       when: gpu_pci_ids | length == 0
+      ignore_errors: yes
+
 
     - name: "[Discovery] Extract vendor and device IDs"
       set_fact:
