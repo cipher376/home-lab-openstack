@@ -1,0 +1,37 @@
+---
+- name: Setup SSH Key Authentication
+  hosts: [baremetal]
+  become: yes
+  vars:
+    # Path where the key will be created on the controller
+    ssh_key_path: "/home/ubuntu/.ssh/id_ed25519"
+    ssh_user: "ubuntu" # Change to the user you want to access via SSH
+
+  tasks:
+    - name: Ensure .ssh directory exists on the controller
+      ansible.builtin.file:
+        path: "{{ ssh_key_path | dirname }}"
+        state: directory
+        mode: '0700'
+      delegate_to: netbox
+      run_once: true
+
+    - name: Generate SSH key pair on controller
+      ansible.builtin.command:
+        cmd: "ssh-keygen -t ed25519 -f {{ ssh_key_path }} -N ''"
+        creates: "{{ ssh_key_path }}"
+      delegate_to: netbox
+      run_once: true
+
+    - name: Fetch the public key from the controller
+      ansible.builtin.slurp:
+        src: "{{ ssh_key_path }}.pub"
+      register: public_key_content
+      delegate_to: netbox
+      run_once: true
+
+    - name: Distribute public key to target machines
+      ansible.posix.authorized_key:
+        user: "{{ ssh_user }}"
+        state: present
+        key: "{{ public_key_content['content'] | b64decode }}"

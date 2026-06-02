@@ -1,0 +1,61 @@
+---
+- name: Deploy Cloudflare Tunnel on Control Box
+  hosts: [baremetal_control]
+  become: yes
+  collections:
+    - community.docker
+  vars_files:
+    - ../../vault/secrets.yml
+  tasks:
+    # --- PREREQUISITE: DOCKER INSTALLATION ---
+    - name: Ensure standard Docker system dependencies are present
+      ansible.builtin.apt:
+        name:
+          - apt-transport-https
+          - ca-certificates
+          - curl
+          - gnupg
+        state: present
+        update_cache: yes
+
+    - name: Ensure Docker engine and CLI are installed
+      ansible.builtin.apt:
+        name:
+          - docker.io
+          - docker-compose-v2
+        state: present
+        update_cache: yes
+
+    - name: Ensure Docker daemon service is started and enabled
+      ansible.builtin.systemd:
+        name: docker
+        state: started
+        enabled: yes
+    # ----------------------------------------
+
+    - name: Create persistent workspace directory for Cloudflared
+      file:
+        path: "/home/ubuntu/cloudflared"
+        state: directory
+        owner: 1000
+        group: 1000
+        mode: '0755'
+
+    - name: Create compose.yaml configuration file
+      copy:
+        dest: "/home/ubuntu/cloudflared/compose.yaml"
+        owner: 1000
+        group: 1000
+        mode: '0644'
+        content: |
+          services:
+            tunnel:
+              image: cloudflare/cloudflared:latest
+              container_name: cloudflare_tunnel
+              restart: unless-stopped
+              command: tunnel --no-autoupdate run --token {{ cloudflare_tunnel_token }}
+
+    - name: Spin up Cloudflare Tunnel container ecosystem
+      community.docker.docker_compose_v2: 
+        project_src: "/home/ubuntu/cloudflared"
+        state: present

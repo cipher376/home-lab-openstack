@@ -1,0 +1,89 @@
+---
+- name: Deploy Lightweight Gitea Server on Control Box
+  hosts: localhost
+  connection: local
+  become: yes
+  vars:
+    gitea_dir: "/home/ubuntu/gitea"
+    # Ansible automatically collects your network facts. 
+    # This filter dynamically snatches your real NetBird IP address.
+    netbird_ip: "{{ ans_facts.netbird.ipv4.address if ('netbird' in ansible_interfaces) else '127.0.0.1' }}"
+
+  tasks:
+    - name: Gather network facts explicitly
+      setup:
+        gather_subset:
+          - network
+
+    - name: Fallback discovery for NetBird IP if interface named differently
+      set_fact:
+        netbird_ip: "{{ hostvars[inventory_hostname]['ansible_' + item]['ipv4']['address'] }}"
+      loop: "{{ ansible_interfaces }}"
+      when: 
+        - "'awg' in item or 'nb' in item or 'netbird' in item"
+        - hostvars[inventory_hostname]['ansible_' + item]['ipv4'] is defined
+
+    - name: Print identified NetBird Routing Target IP
+      debug:
+        msg: "Gitea will bind exclusively to NetBird VPN IP: {{ netbird_ip }}"
+
+    - name: Ensure Docker dependencies are present
+      apt:
+        name:
+          - docker.io
+          - docker-compose-v2
+        state: present
+        update_cache: yes
+
+    - name: Create Gitea working and persistent data storage directories
+      file:
+        path: "{{ item }}"
+        state: directory
+        owner: 1000
+        group: 1000
+        mode: '0755'
+      loop:
+        - "{{ gitea_dir }}"
+        - "{{ gitea_dir }}/data"
+
+    - name: Generate optimized docker-compose.yml configuration
+      copy:
+        dest: "{{ gitea_dir }}/docker-compose.yml"
+        owner: 1000
+        group: 1000
+        mode: '0644'
+        content: |
+          services:
+            server:
+              image: gitea/gitea:1.26
+              container_name: gitea
+              restart: always
+              environment:
+                - USER_UID=1000
+                - USER_GID=1000
+                - GITEA__server__ROOT_URL=http://control.anansecloud.com:3000/
+                - GITEA__server__SSH_DOMAIN=control.anansecloud.com
+                - GITEA__server__SSH_PORT=2222
+                - GITEA__database__DB_TYPE=sqlite3
+              volumes:
+                - ./data:/data
+                - /etc/timezone:/etc/timezone:ro
+                - /etc/localtime:/etc/localtime:ro
+              ports:
+                - "{{ netbird_ip }}:3000:3000"
+                - "{{ netbird_ip }}:2222:22"
+
+    - name: Tear down old container state if existing
+      docker_compose_v2:
+        project_src: "{{ gitea_dir }}"
+        state: absent
+
+    - name: Launch Gitea micro-container ecosystem
+      docker_compose_v2:
+        project_src: "{{ gitea_dir }}"
+        state: present
+      register: compose_output
+
+    - name: Show verification details
+      debug:
+        msg: "Gitea successfully booted! Access via your NetBird node link: http://control.anansecloud.com:3000"

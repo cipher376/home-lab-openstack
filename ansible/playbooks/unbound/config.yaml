@@ -53,7 +53,7 @@
               do-not-query-localhost: no
               domain-insecure: "lan"
               private-domain: "lan"
-              interface: 0.0.0.0
+              interface: 127.0.0.1
               access-control: 172.16.0.0/12 allow
           
           forward-zone:

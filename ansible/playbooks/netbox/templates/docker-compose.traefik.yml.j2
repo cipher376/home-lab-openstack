@@ -1,0 +1,39 @@
+services:
+  traefik:
+    image: traefik:v3.7.1
+    container_name: traefik
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    ports:
+      - "80:80"
+      - "443:443"
+    networks:
+      - {{ traefik_network }}
+    command:
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--entrypoints.web.address=:80"
+      - "--entrypoints.websecure.address=:443"
+      - "--api=true"
+      - "--providers.file.directory=/etc/traefik/dynamic" 
+      - "--providers.file.watch=true"
+      - "--providers.docker.network=web"  
+      - "--entrypoints.web.forwardedHeaders.insecure=false"
+      # Replace 172.16.0.1 with the actual internal IP of your router
+      - "--entrypoints.web.forwardedHeaders.trustedIPs=172.16.5.5/32,172.16.1.1/32,172.16.1.5/32,100.126.60.141/32,100.126.244.183/32"               
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.dashboard.rule=Host(`traefik.internal.anansecloud.com`)"
+      - "traefik.http.routers.dashboard.service=api@internal"
+      - "traefik.http.routers.dashboard.middlewares=auth"
+      # Each $ becomes $$ to escape Jinja, then $$ again to escape Docker Compose
+      - "traefik.http.middlewares.auth.basicauth.users={{ traefik_dashboard_user }}:{{ traefik_dashboard_password_hash | replace('$', '$$') }}"
+
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./dynamic_conf:/etc/traefik/dynamic:ro
+
+networks:
+  {{ traefik_network }}:
+    external: true

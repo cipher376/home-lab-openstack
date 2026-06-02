@@ -1,0 +1,30 @@
+---
+- name: Deploy and Configure NetBird on AnanseCloud Nodes
+  hosts: baremetal
+  become: yes 
+  tasks:
+    - name: Ensure curl is installed
+      apt:
+        name: curl
+        state: present
+        update_cache: yes
+
+    - name: Run official NetBird one-line installer script
+      shell: "curl -fsSL https://pkgs.netbird.io/install.sh | sh"
+      args:
+        creates: /usr/bin/netbird  # Skips running the script if netbird is already installed
+
+    - name: Ensure NetBird service is started and enabled on boot
+      systemd:
+        name: netbird
+        state: started
+        enabled: yes
+
+    - name: Connect node to the NetBird Mesh perimeter
+      command: "netbird up --setup-key {{ netbird_peer_setup_keys }}"
+      register: netbird_output
+      changed_when: "'Connected' in netbird_output.stdout"
+
+    - name: Display NetBird local connection status
+      debug:
+        var: netbird_output.stdout_lines

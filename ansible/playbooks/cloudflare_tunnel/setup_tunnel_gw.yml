@@ -1,0 +1,41 @@
+---
+- name: Deploy Cloudflare Tunnel on OpenWrt
+  hosts: router
+  gather_facts: false  # Avoids Python dependency on the router
+  vars_files:
+    - ../../vault/secrets.yml
+  tasks:
+    - name: Update apk package manager repositories
+      ansible.builtin.command: apk update
+      changed_when: false
+
+    - name: Install cloudflared and LuCI app components via apk
+      ansible.builtin.command: apk add cloudflared luci-app-cloudflared
+      register: apk_result
+      changed_when: "'Installing' in apk_result.stdout"
+
+    - name: Insert Tunnel Token into UCI system configuration
+      ansible.builtin.shell: |
+        uci set cloudflared.@cloudflared[0].token='{{ cloudflare_tunnel_token }}'
+        uci set cloudflared.@cloudflared[0].enabled='1'
+      register: uci_set
+      changed_when: true
+
+    - name: Commit and apply changes to disk storage
+      ansible.builtin.command: uci commit cloudflared
+      changed_when: true
+
+    - name: Force start and enable the boot runtime service
+      ansible.builtin.shell: |
+        /etc/init.d/cloudflared enable
+        /etc/init.d/cloudflared restart
+      changed_when: true
+
+    - name: Verify tunnel container initialization state
+      ansible.builtin.command: /etc/init.d/cloudflared status
+      register: service_status
+      changed_when: false
+
+    - name: Output operational runtime check
+      ansible.builtin.debug:
+        var: service_status.stdout_lines

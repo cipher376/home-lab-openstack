@@ -6,23 +6,20 @@ localhost  ansible_connection=local kolla_skip_distro_check=True
 # additional groups are for more control of the environment.
 [control]
 # These hostname must be resolvable from your deployment host
-node-01 ansible_host=node-01.lan ansible_user=ubuntu
+node-01 ansible_host=node-01.anansecloud.com ansible_user=ubuntu
 
-
-
-# The network nodes are where your l3-agent and loadbalancers will run
+# The network nodes are where your l3-agent and loadbaanansecloud.comcers will run
 # This can be the same as a host in the control group
 # Prodesk
 [network]
-node-01 ansible_host=node-01.lan ansible_user=ubuntu
-
+node-01 ansible_host=node-01.anansecloud.com ansible_user=ubuntu
 
 [compute]
-node-02 ansible_host=node-02.lan ansible_user=ubuntu
-node-03 ansible_host=node-03.lan ansible_user=ubuntu
+node-02 ansible_host=node-02.anansecloud.com ansible_user=ubuntu
+node-03 ansible_host=node-03.anansecloud.com ansible_user=ubuntu
 
 [monitoring]
-node-01 ansible_host=node-01.lan ansible_user=ubuntu
+netbox ansible_host=netbox.anansecloud.com ansible_user=ubuntu
 
 
 # When compute nodes and control nodes use different interfaces,
@@ -30,36 +27,35 @@ node-01 ansible_host=node-01.lan ansible_user=ubuntu
 # and specify like below:
 # compute01 neutron_external_interface=eth0 api_interface=em1 tunnel_interface=em1
 [storage]
-node-01 ansible_host=node-01.lan ansible_user=ubuntu
-node-02 ansible_host=node-02.lan ansible_user=ubuntu
-node-03 ansible_host=node-03.lan ansible_user=ubuntu
-
+node-01 ansible_host=node-01.anansecloud.com ansible_user=ubuntu
+node-02 ansible_host=node-02.anansecloud.com ansible_user=ubuntu
+node-03 ansible_host=node-03.anansecloud.com ansible_user=ubuntu
 
 [cinder-volume-multiple:children]
 storage
 
 [cinder-backup-multiple]
-node-03 ansible_host=node-03.lan ansible_user=ubuntu
+node-03 ansible_host=node-03.anansecloud.com ansible_user=ubuntu
 
 [nova-metadata]
-node-01 ansible_host=node-01.lan ansible_user=ubuntu
+node-01 ansible_host=node-01.anansecloud.com ansible_user=ubuntu
 
-[loadbalancer]
-node-01 ansible_host=node-01.lan ansible_user=ubuntu
+[loadbaanansecloud.comcer]
+node-01 ansible_host=node-01.anansecloud.com ansible_user=ubuntu
 
 [mariadb]
-node-01 ansible_host=node-01.lan ansible_user=ubuntu
+node-01 ansible_host=node-01.anansecloud.com ansible_user=ubuntu
 
 # ==============================================================================
 # FORCE LOGGING BACKENDS OFF THE CONTROL NODE
 # ==============================================================================
 # For Kolla Caracal / Recent releases (OpenSearch backend):
 [opensearch]
-node-02 ansible_host=node-02.lan ansible_user=ubuntu
+netbox ansible_host=netbox.anansecloud.com ansible_user=ubuntu
 
 # For older Kolla releases (Elasticsearch backend):
 [elasticsearch]
-node-02 ansible_host=node-02.lan ansible_user=ubuntu
+netbox ansible_host=netbox.anansecloud.com ansible_user=ubuntu
 
 
 [kolla_toolbox:children]
@@ -103,7 +99,6 @@ monitoring
 [prometheus:children]
 monitoring
 
-
 [freezer-api:children]
 control
 
@@ -113,7 +108,6 @@ control
 [freezer-agent:children]
 control
 compute
-
 
 [telegraf:children]
 compute
@@ -128,7 +122,7 @@ control
 [hacluster-remote:children]
 compute
 
-[loadbalancer:children]
+[loadbaanansecloud.comcer:children]
 network
 
 [mariadb:children]
@@ -140,7 +134,7 @@ control
 [keystone:children]
 control
 
-[glance:children]
+[ganansecloud.comce:children]
 control
 
 [nova:children]
@@ -236,7 +230,7 @@ control
 monitoring
 
 [letsencrypt:children]
-loadbalancer
+loadbaanansecloud.comcer
 
 # Additional control implemented here. These groups allow you to control which
 # services run on which hosts at a per-service level.
@@ -265,9 +259,9 @@ control
 [opensearch-dashboards:children]
 opensearch
 
-# Glance
-[glance-api:children]
-glance
+# Ganansecloud.comce
+[ganansecloud.comce-api:children]
+ganansecloud.comce
 
 # Nova
 [nova-api:children]

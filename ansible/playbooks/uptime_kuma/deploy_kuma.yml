@@ -1,0 +1,41 @@
+---
+- name: Deploy Uptime Kuma
+  hosts: [baremetal_control]
+  become: yes
+  vars:
+    kuma_dir: /opt/uptime-kuma
+
+  tasks:
+    - name: Create directory for Uptime Kuma
+      ansible.builtin.file:
+        path: "{{ kuma_dir }}"
+        state: directory
+        mode: '0755'
+
+    - name: Create docker-compose.yml
+      ansible.builtin.copy:
+        dest: "{{ kuma_dir }}/docker-compose.yml"
+        content: |
+          services:
+            uptime-kuma:
+              image: louislam/uptime-kuma:latest
+              container_name: uptime-kuma
+              restart: always
+              volumes:
+                - ./data:/app/data
+              networks:
+                - web
+              labels:
+                - "traefik.enable=true"
+                - "traefik.http.routers.kuma.rule=Host(`kuma.internal.anansecloud.com`)"
+                - "traefik.http.routers.kuma.entrypoints=web"
+                - "traefik.http.services.kuma.loadbalancer.server.port=3001"
+                - "traefik.docker.network=web"
+          networks:
+            web:
+              external: true
+
+    - name: Deploy Uptime Kuma
+      community.docker.docker_compose_v2:
+        project_src: "{{ kuma_dir }}"
+        state: present

@@ -1,0 +1,121 @@
+---
+- name: Deploy Apache Guacamole Workspace on Control Box
+  hosts: [baremetal_control]
+  become: yes
+  collections:
+    - community.docker
+  vars_files:
+    - ../../vault/secrets.yml
+  vars:
+    guac_dir: "/home/ubuntu/guacamole"
+
+  tasks:
+    - name: Create persistent workspace and configuration paths
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        owner: 1000
+        group: 1000
+        mode: '0755'
+      loop:
+        - "{{ guac_dir }}"
+        - "{{ guac_dir }}/postgres"
+
+    - name: Generate integrated container compose configuration
+      ansible.builtin.copy:
+        dest: "{{ guac_dir }}/compose.yaml"
+        owner: 1000
+        group: 1000
+        mode: '0644'
+        content: |
+          services:
+            # Persistent Database for users, connections, and logs
+            guac-db:
+              image: postgres:15-alpine
+              container_name: guacamole_db
+              restart: unless-stopped
+              environment:
+                POSTGRES_DB: guacamole_db
+                POSTGRES_USER: guacamole_user
+                POSTGRES_PASSWORD: {{ guac_secure_password_postgres }}
+              volumes:
+                - ./postgres:/var/lib/postgresql/data
+              networks:
+                - web
+
+            # The underlying protocol proxy engine
+            guacd:
+              image: guacamole/guacd:latest
+              container_name: guacamole_guacd
+              restart: unless-stopped
+              networks:
+                - web
+
+            # The Web UI Frontend application
+            guacamole:
+              image: guacamole/guacamole:latest
+              container_name: guacamole_web
+              restart: unless-stopped
+              # Ports removed: Traefik handles this via the network
+              environment:
+                GUACD_HOSTNAME: guacd
+                POSTGRESQL_HOSTNAME: guac-db
+                POSTGRESQL_DATABASE: guacamole_db
+                POSTGRESQL_USER: guacamole_user
+                POSTGRESQL_PASSWORD: "{{ guac_secure_password_postgres }}"
+              depends_on:
+                - guac-db
+                - guacd
+              networks:
+                - web
+              labels:
+                - "traefik.enable=true"
+                - "traefik.http.routers.guacamole.rule=Host(`guac.internal.anansecloud.com`)"
+                - "traefik.http.routers.guacamole.entrypoints=web"
+                - "traefik.http.services.guacamole.loadbalancer.server.port=8080"
+                - "traefik.docker.network=web"
+          networks:
+            web:
+              external: true
+    - name: Pull container images cleanly
+      community.docker.docker_image:
+        name: "{{ item }}"
+        source: pull
+      loop:
+        - postgres:15-alpine
+        - guacamole/guacd:latest
+        - guacamole/guacamole:latest
+
+    # Guacamole requires a specific SQL initialization schema on its first boot.
+    # We generate it from the web image and inject it automatically if the database is blank.
+    - name: Check if database initialization schema script has run
+      ansible.builtin.stat:
+        path: "{{ guac_dir }}/postgres/.init_done"
+      register: db_init_check
+
+    - name: Initialize Guacamole Database Schema
+      ansible.builtin.shell: |
+        # Generate the SQL file
+        docker run --rm guacamole/guacamole /opt/guacamole/bin/initdb.sh --postgresql > initdb.sql
+        
+        # Start DB only
+        docker compose up -d guac-db
+        
+        # Robust check: wait for Postgres to be ready to accept connections
+        until docker exec guacamole_db pg_isready -U guacamole_user -d guacamole_db; do
+          echo "Waiting for database to initialize..."
+          sleep 2
+        done
+        
+        # Import schema
+        docker exec -i guacamole_db psql -U guacamole_user -d guacamole_db < initdb.sql
+        touch postgres/.init_done
+        rm initdb.sql
+      args:
+        chdir: "{{ guac_dir }}"
+      when: not db_init_check.stat.exists
+
+    - name: Launch entire Apache Guacamole container ecosystem
+      community.docker.docker_compose_v2:
+        project_src: "{{ guac_dir }}"
+        state: present

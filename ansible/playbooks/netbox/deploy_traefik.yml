@@ -1,0 +1,47 @@
+---
+- name: Deploy Traefik Reverse Proxy
+  hosts: [baremetal_control]
+  become: yes
+  vars:
+    traefik_dir: "/opt/traefik"
+    traefik_network: "web"
+
+  tasks:
+    - name: Create 'web' docker network
+      community.docker.docker_network:
+        name: web
+        driver: bridge
+        state: present
+  
+    - name: Ensure base directory exists
+      ansible.builtin.file:
+        path: "{{ traefik_dir }}"
+        state: directory
+        mode: '0755'
+
+    - name: Create docker network for proxy
+      community.docker.docker_network:
+        name: "{{ traefik_network }}"
+
+    - name: Ensure dynamic config directory exists
+      ansible.builtin.file:
+        path: "{{ traefik_dir }}/dynamic_conf"
+        state: directory
+        mode: '0755'
+
+    - name: Copy dynamic configuration (middlewares, etc)
+      ansible.builtin.copy:
+        src: files/traefik_dynamic_config.yml  # Your local config file
+        dest: "{{ traefik_dir }}/dynamic_conf/config.yml"
+        mode: '0644'
+
+    - name: Template the docker-compose file
+      ansible.builtin.template:
+        src: docker-compose.traefik.yml.j2
+        dest: "{{ traefik_dir }}/docker-compose.yml"
+        mode: '0644'
+
+    - name: Launch Traefik
+      community.docker.docker_compose_v2:
+        project_src: "{{ traefik_dir }}"
+        state: present

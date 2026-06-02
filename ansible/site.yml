@@ -8,25 +8,69 @@
 
 # 1A. Provision Infrastructure Security & Borders
 - name: Phase 1A - Configure Cluster Firewall Limits (UFW)
-  import_playbook: firewall_config.yml
+  import_playbook: playbooks/firewall_config.yml
+  tags: firewall
 
 # 1B. Apply OS Hardening and Defenses
 - name: Phase 1B - Apply Host-Level Node Hardening
-  import_playbook: secure_baremetal_nodes.yml
+  import_playbook: playbooks/secure_baremetal_nodes.yml
+  tags: hardening
 
 # 1C. Advanced Security Hardening for OpenStack Infrastructure
 - name: Phase 1C - Advanced Security Hardening for OpenStack Infrastructure
-  import_playbook: security_deep_hardening.yml
+  import_playbook: playbooks/security_deep_hardening.yml
+  tags: hardening
 
 
-# 2. Provision Underlying OS Base & Storage Runtimes
-- name: Phase 2 - Install System Utilities & SeaweedFS Backends
-  import_playbook: install_packages.yml
+
+
+# 2A. Configure Wireguard and NetBird Mesh VPN for secure inter-node communication
+- name: Phase 2A - Configure Wireguard and NetBird Mesh VPN for secure inter-node communication
+  import_playbook: playbooks/netbird/setup_netbird.yml
+  tags: netbird
+
+# 2B. Configure Cloudflare Tunnel for secure remote access to OpenStack services
+- name: Phase 2B - Configure Cloudflare Tunnel for secure remote access to OpenStack services
+  import_playbook: playbooks/cloudflare_tunnel/setup_tunnel_gw.yml
+  tags: cloudflare_tunnel
+
+
+
+#==================================================================================================
+#  SETUP AND CONFIGURE NETBOX, NGINX PROXY, AND GUACAMOLE FOR INFRASTRUCTURE MANAGEMENT AND REMOTE ACCESS
+#==================================================================================================
+# 3A. Generate and distribute SSH keys for secure access to OpenStack nodes and VMs
+- name: Phase 3A - Generate and distribute SSH keys for secure access to OpenStack nodes and VMs
+  import_playbook: playbooks/netbox/setup_ssh.yml
+  tags: ssh
+
+- name: Phase 3B - Deploy Traefik Reverse Proxy for secure access to NetBox and Guacamole
+  import_playbook: playbooks/netbox/deploy_traefik.yml
+  tags: traefik
+
+# 3C. Configure Guacamole for secure remote desktop access to OpenStack nodes and VMs
+- name: Phase 3C - Configure Guacamole for secure remote desktop access to OpenStack nodes and VMs
+  import_playbook: playbooks/guacamole/guac_setup.yml
+  tags: guacamole
+
+# 3D. Deploy Uptime Kuma for monitoring OpenStack service health and availability
+- name: Phase 3D - Deploy Uptime Kuma for monitoring OpenStack service health and availability
+  import_playbook: playbooks/uptime_kuma/deploy_kuma.yml
+  tags: uptime_kuma
+
+# 3C. Provision Underlying OS Base & Storage Runtimes
+- name: Phase 4 - Install System Utilities & SeaweedFS Backends
+  import_playbook: playbooks/install_packages.yml
+  tags: packages
+
+
+
 
 # 3. Prepare node for GPU passthrough and privileged container runtimes
 - name: Phase 3 - GPU passhrough and privileged container runtime prep
-  import_playbook: gpu_passthrough.yml
+  import_playbook: playbooks/gpu_passthrough.yml
 
 # 4. Prepare Nodes for Kolla-Ansible
 - name: Phase 4 - Prepare Nodes for Kolla-Ansible
-  import_playbook: prep_nodes.yml
+  import_playbook: playbooks/prep_nodes.yml
+  tags: prep

@@ -1,0 +1,16 @@
+http:
+  middlewares:
+    my-security-chain:
+      chain:
+        middlewares:
+          - rate-limit
+          - security-headers
+    rate-limit:
+      rateLimit:
+        average: 100
+        burst: 50
+    security-headers:
+      headers:
+        stsIncludeSubdomains: true
+        stsPreload: true
+        frameDeny: true

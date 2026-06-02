@@ -118,7 +118,9 @@ enable_central_logging: "yes"  # For activating all logging facilities
 enable_prometheus_node_exporter: "yes"
 enable_prometheus_rabbitmq_exporter: "yes"
 enable_prometheus_fluentd_integration: "yes"
+prometheus_enable_external_vips: "yes"
 enable_debug_logging: "yes"
 enable_verbose_logging: "no"
+opensearch_cluster_manager_nodes: ["{{ 'node-02' }}"]
 
 
