@@ -1,0 +1,111 @@
+# Configuration file of Harbor
+# Version: {{ harbor_version }}
+
+# The IP address or hostname to access admin UI and registry service.
+# DO NOT use localhost or 127.0.0.1, because Harbor needs to be accessed by external clients.
+
+hostname: {{ harbor_domain }}
+
+# http related config
+http:
+  # port for http, default is 80. If https enabled, this port will redirect to https port
+  port: 8080
+
+# HTTPS is disabled - Traefik handles TLS termination externally
+# https:
+#   port: 443
+#   certificate: /your/certificate/path
+#   private_key: /your/private/key/path
+
+# Harbor core configuration
+harbor_admin_password: {{ harbor_admin_password }}
+authentication_mode: db_auth
+self_registration: off
+
+# Database configuration
+database:
+  password: {{ harbor_db_password }}
+  max_idle_conns: 50
+  max_open_conns: 100
+
+# Data volume
+data_volume: {{ data_directory }}
+
+# Initial Admin User
+admin_initial_password: {{ harbor_admin_password }}
+
+# Jobservice configuration
+jobservice:
+  max_job_workers: 10
+  job_loggers:
+    - FILE
+    - DB
+  logger_sweeper_duration: 15
+  # Optional: secret_key for job service authentication
+  # secret_key: base64-encoded-secret-key
+
+# Trivy configuration (vulnerability scanning)
+trivy:
+  enabled: true
+  ignore_unfixed: false
+  skip_update: false
+  insecure: false
+  github_token:
+  timeout: 5m0s
+
+# Registry configuration
+registry:
+  relativeurls: false
+  storage_provider_config:
+    redirect:
+      disable: false
+  controller:
+    read_only: false
+
+# Notification configuration
+notification:
+  webhook_job_max_retry: 10
+  webhook_job_http_client_timeout: 30  # Required - timeout in seconds
+
+# Chart repository configuration (Helm)
+chart:
+  absolute_url: disabled
+
+# Log configurations
+log:
+  level: info
+  local:
+    rotate_count: 50
+    rotate_size: 200M
+    location: /var/log/harbor
+
+# External URL for Harbor
+external_url: https://{{ harbor_domain }}
+
+# This attribute is for migrator to detect the version of the .cfg file
+_version: {{ harbor_version | replace('v', '') }}
+
+# Metrics configuration (optional - for Prometheus)
+metric:
+  enabled: false
+  port: 9090
+  path: /metrics
+
+# Optional: Email settings for notifications (uncomment to enable)
+# email:
+#   host: smtp.example.com
+#   port: 25
+#   username: user@example.com
+#   password: your_password
+#   ssl: false
+#   identity: harbor
+
+# Optional: LDAP settings (uncomment to enable)
+# ldap:
+#   url: ldap://ldap.example.com
+#   search_dn: cn=admin,dc=example,dc=com
+#   search_password: your_password
+#   base_dn: dc=example,dc=com
+#   filter: (objectClass=person)
+#   scope: 2
+#   uid_attribute: uid

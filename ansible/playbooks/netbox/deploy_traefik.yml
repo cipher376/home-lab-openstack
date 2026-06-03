@@ -12,7 +12,15 @@
         name: web
         driver: bridge
         state: present
-  
+
+    - name: Ensure acme.json exists and has correct permissions
+      ansible.builtin.file:
+        path: "{{ traefik_dir }}/acme.json"
+        state: touch
+        owner: root
+        group: root
+        mode: '0600'
+
     - name: Ensure base directory exists
       ansible.builtin.file:
         path: "{{ traefik_dir }}"
@@ -37,7 +45,7 @@
 
     - name: Template the docker-compose file
       ansible.builtin.template:
-        src: docker-compose.traefik.yml.j2
+        src: traefik.yml.j2
         dest: "{{ traefik_dir }}/docker-compose.yml"
         mode: '0644'
 

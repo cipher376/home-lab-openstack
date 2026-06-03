@@ -53,6 +53,10 @@
   import_playbook: playbooks/guacamole/guac_setup.yml
   tags: guacamole
 
+- name: Phase 3D - Deploy Harbor Container Registry for OpenStack image storage and management
+  import_playbook: playbooks/netbox/deploy_harbor.yml
+  tags: harbor
+
 # 3D. Deploy Uptime Kuma for monitoring OpenStack service health and availability
 - name: Phase 3D - Deploy Uptime Kuma for monitoring OpenStack service health and availability
   import_playbook: playbooks/uptime_kuma/deploy_kuma.yml
@@ -63,7 +67,9 @@
   import_playbook: playbooks/install_packages.yml
   tags: packages
 
-
+- name: Phase 5 - Configure harbor registry as a pull-through cache for Docker Hub and Quay.io
+  import_playbook: playbooks/netbox/config_docker_harbor.yml
+  tags: harbor-pull-through
 
 
 # 3. Prepare node for GPU passthrough and privileged container runtimes

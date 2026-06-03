@@ -70,10 +70,17 @@
                 - web
               labels:
                 - "traefik.enable=true"
+                - "traefik.docker.network=web"
+                # Router for HTTP (Port 80) - This is primarily for the redirect
                 - "traefik.http.routers.guacamole.rule=Host(`guac.internal.anansecloud.com`)"
                 - "traefik.http.routers.guacamole.entrypoints=web"
+                # Router for HTTPS (Port 443
+                - "traefik.http.routers.guacamole-secure.rule=Host(`guac.internal.anansecloud.com`)"
+                - "traefik.http.routers.guacamole-secure.entrypoints=websecure"
+                - "traefik.http.routers.guacamole-secure.tls=true"
+                - "traefik.http.routers.guacamole-secure.tls.certresolver=myresolver"
+                # Service configuration
                 - "traefik.http.services.guacamole.loadbalancer.server.port=8080"
-                - "traefik.docker.network=web"
           networks:
             web:
               external: true

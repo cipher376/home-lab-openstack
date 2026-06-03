@@ -40,7 +40,7 @@ node-03 ansible_host=node-03.anansecloud.com ansible_user=ubuntu
 [nova-metadata]
 node-01 ansible_host=node-01.anansecloud.com ansible_user=ubuntu
 
-[loadbaanansecloud.comcer]
+[loadbalancer]
 node-01 ansible_host=node-01.anansecloud.com ansible_user=ubuntu
 
 [mariadb]
@@ -55,6 +55,41 @@ netbox ansible_host=netbox.anansecloud.com ansible_user=ubuntu
 
 # For older Kolla releases (Elasticsearch backend):
 [elasticsearch]
+netbox ansible_host=netbox.anansecloud.com ansible_user=ubuntu
+
+# Add these missing groups for Prometheus services
+[prometheus-openstack-network-exporter]
+netbox ansible_host=netbox.anansecloud.com ansible_user=ubunt
+
+[prometheus-valkey-exporter]
+netbox ansible_host=netbox.anansecloud.com ansible_user=ubuntu
+
+# Optional: Add other common Prometheus groups
+[prometheus-blackbox-exporter]
+netbox ansible_host=netbox.anansecloud.com ansible_user=ubuntu
+
+[prometheus-libvirt-exporter]
+netbox ansible_host=netbox.anansecloud.com ansible_user=ubuntu
+
+[prometheus-cadvisor]
+netbox ansible_host=netbox.anansecloud.com ansible_user=ubuntu
+
+[prometheus-memcached-exporter]
+netbox ansible_host=netbox.anansecloud.com ansible_user=ubuntu
+
+[prometheus-mysql-exporter]
+netbox ansible_host=netbox.anansecloud.com ansible_user=ubuntu
+
+[prometheus-rabbitmq-exporter]
+netbox ansible_host=netbox.anansecloud.com ansible_user=ubuntu
+
+[prometheus-haproxy-exporter]
+netbox ansible_host=netbox.anansecloud.com ansible_user=ubuntu
+
+[prometheus-node-exporter]
+netbox ansible_host=netbox.anansecloud.com ansible_user=ubuntu
+
+[prometheus-keepalived-exporter]
 netbox ansible_host=netbox.anansecloud.com ansible_user=ubuntu
 
 

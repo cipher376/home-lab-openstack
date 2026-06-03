@@ -1,0 +1,57 @@
+services:
+  traefik:
+    image: traefik:v3.7.1
+    container_name: traefik
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    ports:
+      - "172.16.0.2:80:80"
+      - "172.16.0.2:443:443"
+    networks:
+      - {{ traefik_network }}
+    command:
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--providers.docker.network={{ traefik_network }}"
+      - "--providers.file.directory=/etc/traefik/dynamic"
+      - "--providers.file.watch=true"
+      - "--api=true"
+      # Entrypoints
+      - "--entrypoints.web.address=:80"
+      - "--entrypoints.web.http.redirections.entryPoint.to=websecure"
+      - "--entrypoints.web.http.redirections.entryPoint.scheme=https"
+      - "--entrypoints.websecure.address=:443"
+      # Security
+      - "--entrypoints.web.forwardedHeaders.insecure=false"
+      - "--entrypoints.web.forwardedHeaders.trustedIPs=172.16.5.5/32,172.16.1.1/32,172.16.1.5/32,100.126.60.141/32,100.126.244.183/32"
+      # Cloudflare DNS Challenge
+      - "--certificatesresolvers.cloudflare-wildcard.acme.dnschallenge=true"
+      - "--certificatesresolvers.cloudflare-wildcard.acme.dnschallenge.provider=cloudflare"
+      - "--certificatesresolvers.cloudflare-wildcard.acme.email=antiamoah890@gmail.com"
+      - "--certificatesresolvers.cloudflare-wildcard.acme.storage=/letsencrypt/acme.json"
+      # Optional: Force Traefik to use public DNS to check its own TXT records
+      - "--certificatesresolvers.cloudflare-wildcard.acme.dnschallenge.resolvers=1.1.1.1:53,8.8.8.8:53"
+      - "--certificatesresolvers.cloudflare-wildcard.acme.dnschallenge=true"
+      - "--certificatesresolvers.cloudflare-wildcard.acme.tlschallenge=false"
+      - "--certificatesresolvers.cloudflare-wildcard.acme.httpchallenge=false"
+
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.dashboard.rule=Host(`traefik.internal.anansecloud.com`)"
+      - "traefik.http.routers.dashboard.service=api@internal"
+      - "traefik.http.routers.dashboard.middlewares=auth"
+      - "traefik.http.routers.dashboard.tls.certResolver=cloudflare-wildcard"
+      # Each $ becomes $$ to escape Jinja, then $$ again to escape Docker Compose
+      - "traefik.http.middlewares.auth.basicauth.users={{ traefik_dashboard_user }}:{{ traefik_dashboard_password_hash | replace('$', '$$') }}"
+    environment:
+      - "CF_DNS_API_TOKEN={{ CF_DNS_API_TOKEN }}"
+      - "CF_API_EMAIL=antiamoah890@gmail.com"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./dynamic_conf:/etc/traefik/dynamic:ro
+      - "{{ traefik_dir }}/acme.json:/letsencrypt/acme.json"
+
+networks:
+  {{ traefik_network }}:
+    external: true

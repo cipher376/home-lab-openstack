@@ -2,6 +2,8 @@
 - name: Prepare Nodes for Kolla-Ansible
   hosts: baremetal
   become: true
+  vars_files:
+    - ../../vault/secrets.yml
   tasks:
     - name: Ensure 'ubuntu' user is in the 'docker' and 'sudo' groups
       user:
@@ -59,6 +61,13 @@
     - name: Verify the setting is active
       command: sysctl net.ipv4.ip_forward
       register: sysctl_result
+
+    - name: Login to Quay.io
+      docker_login:
+        registry: quay.io
+        username: "{{ quay_username }}"
+        password: "{{ quay_password }}"
+        reauthorize: yes
 
   handlers:
     - name: Restart SSH

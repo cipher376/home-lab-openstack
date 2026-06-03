@@ -1,0 +1,197 @@
+---
+- name: Deploy Harbor with Traefik Integration
+  hosts: baremetal_control
+  become: yes
+  vars_files:
+    - ../../vault/secrets.yml
+  vars:
+    harbor_version: "v2.14.2"
+    harbor_domain: "registry.internal.anansecloud.com"
+    traefik_network_name: "web"
+    install_dir: "/opt/harbor"
+    data_directory: "~/data"
+
+  tasks:
+    # - name: Remove conflicting docker-compose-v2 package
+    #   apt:
+    #     name: docker-compose-v2
+    #     state: absent
+    #   ignore_errors: yes
+    
+    # - name: Clean up existing Harbor config directory to prevent conflicts
+    #   file:
+    #     path: "{{ install_dir }}/harbor/common"
+    #     state: absent
+
+    - name: Ensure data directory exists and has correct permissions
+      file:
+        path: "{{ data_directory }}"
+        state: directory
+        owner: "10000"
+        group: "10000"
+        mode: '0755'
+        recurse: yes
+
+    - name: Ensure Harbor user exists (UID 10000)
+      user:
+        name: harbor
+        uid: 10000
+        system: yes
+        shell: /usr/sbin/nologin
+        create_home: no
+      ignore_errors: yes
+
+  
+    - name: Create data directory structure
+      file:
+        path: "{{ item }}"
+        state: directory
+        owner: "10000"
+        group: "10000"
+        mode: '0755'
+      loop:
+        - "{{ data_directory }}"
+        - "{{ data_directory }}/database"
+        - "{{ data_directory }}/registry"
+        - "{{ data_directory }}/redis"
+        - "{{ data_directory }}/trivy"
+        - "{{ data_directory }}/job_logs"
+        - "{{ data_directory }}/chart_storage"
+
+    - name: Create installation directory
+      file:
+        path: "{{ install_dir }}"
+        state: directory
+        mode: '0755'
+        owner: root
+        group: root
+
+    - name: Ensure required dependencies exist
+      apt:
+        name:
+          - python3-docker
+          - docker-compose-plugin
+          - python3-pip
+        state: present
+        update_cache: yes
+
+    - name: Create base directory
+      file:
+        path: "{{ install_dir }}"
+        state: directory
+        mode: '0755'
+
+    - name: Download and unpack Harbor
+      unarchive:
+        src: "https://github.com/goharbor/harbor/releases/download/{{ harbor_version }}/harbor-offline-installer-{{ harbor_version }}.tgz"
+        dest: "{{ install_dir }}"
+        remote_src: yes
+        creates: "{{ install_dir }}/harbor/harbor.yml"
+
+    - name: Configure harbor.yml
+      template:
+        src: templates/harbor.yml.j2
+        dest: "{{ install_dir }}/harbor/harbor.yml"
+
+    - name: Run install script (creates necessary images/configs)
+      command:
+        cmd: "./install.sh --with-trivy"
+        chdir: "{{ install_dir }}/harbor"
+        creates: "{{ install_dir }}/harbor/docker-compose.yml"
+    
+    - name: Apply Traefik Override
+      copy:
+        dest: "{{ install_dir }}/harbor/docker-compose.override.yml"
+        content: |
+          services:
+            proxy: 
+              image: goharbor/nginx-photon:{{ harbor_version }}
+              networks:
+                - {{ traefik_network_name }}
+              labels:
+                # Harbor Service Labels
+                - "traefik.enable=true"
+
+                # Router for HTTP (redirect to HTTPS)
+                - "traefik.http.routers.harbor-http.rule=Host(`{{ harbor_domain }}`)"
+                - "traefik.http.routers.harbor-http.entrypoints=web"
+                - "traefik.http.routers.harbor-http.middlewares=redirect-to-https"
+
+                # Router for HTTPS (main configuration)
+                - "traefik.http.routers.harbor.rule=Host(`{{ harbor_domain }}`)"
+                - "traefik.http.routers.harbor.entrypoints=websecure"
+                - "traefik.http.routers.harbor.tls=true"
+                - "traefik.http.routers.harbor.tls.certResolver=cloudflare-wildcard"
+
+                # Service definition
+                - "traefik.http.services.harbor.loadbalancer.server.port=8080"
+                - "traefik.http.services.harbor.loadbalancer.server.scheme=http"
+
+                # Network
+                - "traefik.docker.network={{ traefik_network_name }}"
+          
+          networks:
+            web:
+              external: true
+            default:
+              name: {{ traefik_network_name }}
+              external: true
+
+    - name: Ensure nginx container is on Traefik network
+      docker_network:
+        name: "{{ traefik_network_name }}"
+        connected:
+          - nginx
+        appends: yes
+      ignore_errors: yes
+
+    - name: Verify no host ports are exposed on nginx
+      command: docker port nginx
+      register: nginx_ports
+      changed_when: false
+      failed_when: false
+      ignore_errors: yes
+
+    - name: Display warning if ports are exposed
+      debug:
+        msg: "WARNING: nginx is exposing ports: {{ nginx_ports.stdout }}"
+      when: nginx_ports.stdout is defined and nginx_ports.stdout != ""
+
+    - name: Restart Harbor with Traefik integration
+      community.docker.docker_compose_v2:
+        project_src: "{{ install_dir }}/harbor"
+        state: present
+        pull: always
+        remove_orphans: yes
+      register: harbor_restart
+
+    - name: Wait for Harbor to stabilize
+      wait_for:
+        timeout: 45
+      when: harbor_restart is defined
+
+    - name: Test Harbor connectivity through Traefik
+      uri:
+        url: "https://{{ harbor_domain }}/api/v2.0/ping"
+        validate_certs: no
+        status_code: 200
+      register: harbor_ping
+      retries: 15
+      delay: 10
+      until: harbor_ping.status == 200
+
+    - name: Display deployment status
+      debug:
+        msg: |
+          ✅ Harbor deployed successfully!
+          📍 URL: https://{{ harbor_domain }}
+          🔑 Admin login: admin
+          🔐 Admin password: {{ harbor_admin_password }}
+          🐳 Docker login: docker login {{ harbor_domain }}
+          
+          📋 Next steps:
+          1. Create a project: https://{{ harbor_domain }}
+          2. Pull and push a test image:
+             docker pull alpine:latest
+             docker tag alpine:latest {{ harbor_domain }}/test-project/alpine:latest
+             docker push {{ harbor_domain }}/test-project/alpine:latest

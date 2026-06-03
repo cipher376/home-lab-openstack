@@ -27,10 +27,17 @@
                 - web
               labels:
                 - "traefik.enable=true"
+                - "traefik.docker.network=web"
+                # Router for HTTP (Port 80)
                 - "traefik.http.routers.kuma.rule=Host(`kuma.internal.anansecloud.com`)"
                 - "traefik.http.routers.kuma.entrypoints=web"
+                # Router for HTTPS (Port 443)
+                - "traefik.http.routers.kuma-secure.rule=Host(`kuma.internal.anansecloud.com`)"
+                - "traefik.http.routers.kuma-secure.entrypoints=websecure"
+                - "traefik.http.routers.kuma-secure.tls=true"
+                - "traefik.http.routers.kuma-secure.tls.certresolver=myresolver"
+                # Service configuration
                 - "traefik.http.services.kuma.loadbalancer.server.port=3001"
-                - "traefik.docker.network=web"
           networks:
             web:
               external: true

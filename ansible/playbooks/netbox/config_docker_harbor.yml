@@ -1,0 +1,349 @@
+---
+- name: Configure Docker registry mirrors for Quay & Docker Hub via Harbor on Ubuntu nodes
+  hosts: openstack_nodes
+  become: yes
+  gather_facts: yes
+  
+  vars:
+    # ============================================
+    # YOUR HARBOR CONFIGURATION
+    # ============================================
+    harbor_server: "registry.internal.anansecloud.com"  # Your Harbor FQDN
+    quay_cache_project: "quay-io-cache"                  # Your Harbor proxy cache for Quay.io
+    dockerhub_cache_project: "docker-cache"          # Your Harbor proxy cache for Docker Hub
+    
+    # ============================================
+    # DERIVED VARIABLES (CORRECTED)
+    # ============================================
+    harbor_url: "https://{{ harbor_server }}"
+    # These are for docker pull commands - NO PROTOCOL
+    quay_mirror_path: "{{ harbor_server }}/{{ quay_cache_project }}"
+    dockerhub_mirror_path: "{{ harbor_server }}/{{ dockerhub_cache_project }}"
+    # These are for daemon.json - NEEDS https://
+    quay_mirror_url: "https://{{ harbor_server }}/{{ quay_cache_project }}"
+    dockerhub_mirror_url: "https://{{ harbor_server }}/{{ dockerhub_cache_project }}"
+    docker_config_path: /etc/docker/daemon.json
+    
+  tasks:
+    # ============================================
+    # 1. VERIFY DOCKER IS INSTALLED
+    # ============================================
+    - name: Check if Docker is installed
+      ansible.builtin.command: docker --version
+      register: docker_check
+      changed_when: false
+      ignore_errors: yes
+    
+    - name: Fail if Docker is not installed
+      ansible.builtin.fail:
+        msg: "Docker is not installed on {{ inventory_hostname }}. Please install Docker first."
+      when: docker_check.rc != 0
+    
+    - name: Display Docker version
+      ansible.builtin.debug:
+        msg: "Docker version on {{ inventory_hostname }}: {{ docker_check.stdout }}"
+    
+    # ============================================
+    # 2. ENSURE DOCKER SERVICE IS RUNNING
+    # ============================================
+    - name: Ensure Docker service is running and enabled
+      ansible.builtin.service:
+        name: docker
+        state: started
+        enabled: yes
+    
+    # ============================================
+    # 3. DOCKER DAEMON CONFIGURATION (DUAL MIRRORS - HTTPS)
+    # ============================================
+    - name: Create Docker configuration directory
+      ansible.builtin.file:
+        path: /etc/docker
+        state: directory
+        mode: '0755'
+    
+    - name: Backup existing Docker daemon configuration if present
+      ansible.builtin.copy:
+        src: "{{ docker_config_path }}"
+        dest: "{{ docker_config_path }}.backup.{{ ansible_date_time.epoch }}"
+        remote_src: yes
+        mode: '0644'
+      ignore_errors: yes
+    
+    - name: Configure Docker registry mirrors for Quay.io and Docker Hub via Harbor (HTTPS)
+      ansible.builtin.copy:
+        content: |
+          {
+              "registry-mirrors": [
+                  "{{ quay_mirror_url }}",
+                  "{{ dockerhub_mirror_url }}"
+              ],
+              "log-driver": "json-file",
+              "log-opts": {
+                  "max-size": "10m",
+                  "max-file": "3"
+              },
+              "exec-opts": ["native.cgroupdriver=systemd"],
+              "storage-driver": "overlay2",
+              "live-restore": true,
+              "default-address-pools": [
+                  {
+                      "base": "172.17.0.0/16",
+                      "size": 24
+                  }
+              ]
+          }
+        dest: "{{ docker_config_path }}"
+        mode: '0644'
+      register: docker_config
+    
+    - name: Restart Docker to apply registry mirror configuration
+      ansible.builtin.service:
+        name: docker
+        state: restarted
+        daemon_reload: yes
+      when: docker_config.changed
+    
+    # ============================================
+    # 4. WAIT FOR DOCKER TO BE READY
+    # ============================================
+    - name: Wait for Docker daemon to be ready
+      ansible.builtin.wait_for:
+        timeout: 15
+    
+    - name: Verify Docker is running after restart
+      ansible.builtin.command: docker version
+      register: docker_version
+      changed_when: false
+      retries: 5
+      delay: 3
+      until: docker_version.rc == 0
+    
+    # ============================================
+    # 5. TEST HARBOR CONNECTIVITY (HTTPS)
+    # ============================================
+    - name: Test Harbor connectivity
+      ansible.builtin.uri:
+        url: "{{ harbor_url }}/v2/"
+        validate_certs: yes
+        status_code: 200,401
+        timeout: 10
+      register: harbor_test
+      ignore_errors: yes
+      retries: 3
+      delay: 5
+    
+    - name: Display Harbor connectivity result
+      ansible.builtin.debug:
+        msg: |
+          {% if harbor_test.status is defined and harbor_test.status in [200,401] %}
+          ✅ Harbor server is reachable via HTTPS with valid certificate!
+          {% else %}
+          ❌ Cannot reach Harbor server via HTTPS. Please check:
+             - Harbor URL: {{ harbor_server }}
+             - Harbor is running and HTTPS is configured
+             - DNS resolution: nslookup {{ harbor_server }}
+             - Certificate validity: openssl s_client -connect {{ harbor_server }}:443
+             - Network connectivity: curl -v {{ harbor_url }}/v2/
+          {% endif %}
+    
+    # ============================================
+    # 6. TEST BOTH CACHES (CORRECTED - NO https://)
+    # ============================================
+    
+    # Test Quay.io cache
+    - name: Test pulling Quay.io image through Harbor mirror
+      ansible.builtin.command:
+        cmd: docker pull {{ quay_mirror_path }}/prometheus/prometheus:latest
+      register: quay_pull_test
+      changed_when: false
+      ignore_errors: yes
+      retries: 2
+      delay: 10
+      environment:
+        DOCKER_CLI_TIMEOUT: "300"
+    
+    - name: Clean up Quay test image
+      ansible.builtin.command:
+        cmd: docker rmi {{ quay_mirror_path }}/prometheus/prometheus:latest
+      when: quay_pull_test.rc == 0
+      changed_when: false
+      ignore_errors: yes
+    
+    # Test Docker Hub cache
+    - name: Test pulling Docker Hub image through Harbor mirror
+      ansible.builtin.command:
+        cmd: docker pull {{ dockerhub_mirror_path }}/library/ubuntu:latest
+      register: dockerhub_pull_test
+      changed_when: false
+      ignore_errors: yes
+      retries: 2
+      delay: 10
+      environment:
+        DOCKER_CLI_TIMEOUT: "300"
+    
+    - name: Clean up Docker Hub test image
+      ansible.builtin.command:
+        cmd: docker rmi {{ dockerhub_mirror_path }}/library/ubuntu:latest
+      when: dockerhub_pull_test.rc == 0
+      changed_when: false
+      ignore_errors: yes
+    
+    # ============================================
+    # 7. DISPLAY CONFIGURATION SUMMARY
+    # ============================================
+    - name: Display configuration summary
+      ansible.builtin.debug:
+        msg: |
+          ===========================================================================
+          ✅ Docker Registry Mirror Configuration Complete
+          ===========================================================================
+          
+          📋 Configuration Details:
+          -------------------------
+          Harbor Server:      {{ harbor_server }}
+          Harbor URL:         {{ harbor_url }}
+          Protocol:           HTTPS (Valid Certificate)
+          
+          🔄 Registry Mirrors Configured:
+          -------------------------
+          1. Quay.io Mirror:     {{ quay_mirror_url }}
+          2. Docker Hub Mirror:  {{ dockerhub_mirror_url }}
+          
+          Node:               {{ inventory_hostname }} ({{ ansible_default_ipv4.address | default('unknown') }})
+          
+          ✅ Cache Test Results:
+          -------------------------
+          Quay.io Cache:      {% if quay_pull_test.rc == 0 %}✅ WORKING{% else %}❌ FAILED{% endif %}
+          Docker Hub Cache:   {% if dockerhub_pull_test.rc == 0 %}✅ WORKING{% else %}❌ FAILED{% endif %}
+          
+          {% if quay_pull_test.rc == 0 and dockerhub_pull_test.rc == 0 %}
+          🎉 Both caches are WORKING correctly!
+          {% elif quay_pull_test.rc == 0 or dockerhub_pull_test.rc == 0 %}
+          ⚠️  One cache is working. Check the failed cache's project in Harbor.
+          {% else %}
+          ❌ Both caches FAILED. Troubleshooting:
+             1. Verify both proxy cache projects exist in Harbor
+             2. Check project names: {{ quay_cache_project }} and {{ dockerhub_cache_project }}
+             3. Verify project types are 'Proxy Cache'
+             4. Check upstream URLs:
+                - Quay: https://quay.io
+                - Docker Hub: https://registry-1.docker.io
+             5. Verify Harbor can reach these upstream registries
+             6. Check Harbor logs: docker logs harbor-core
+          {% endif %}
+          
+          📦 How to Use:
+          --------------
+          # Pull Quay.io images (automatically uses Quay mirror)
+          docker pull quay.io/prometheus/prometheus:latest
+          
+          # Pull Docker Hub images (automatically uses Docker Hub mirror)
+          docker pull ubuntu:latest
+          docker pull nginx:latest
+          docker pull alpine:latest
+          
+          # Explicit pulls through mirrors (to warm the cache)
+          docker pull {{ quay_mirror_path }}/prometheus/prometheus:latest
+          docker pull {{ dockerhub_mirror_path }}/library/ubuntu:latest
+          
+          # Check mirror configuration
+          docker info | grep -A 5 "Registry Mirrors"
+          
+          ===========================================================================
+    
+    # ============================================
+    # 8. SHOW REGISTRY MIRROR STATUS (CORRECTED)
+    # ============================================
+    - name: Show current registry mirror configuration
+      ansible.builtin.shell: |
+        docker info | grep -A 10 "Registry Mirrors"
+      register: mirror_status
+      changed_when: false
+      ignore_errors: yes
+    
+    - name: Display mirror status
+      ansible.builtin.debug:
+        msg: "{{ mirror_status.stdout_lines }}"
+      when: mirror_status.rc == 0 and mirror_status.stdout != ""
+    
+    - name: Show fallback message if no mirrors configured
+      ansible.builtin.debug:
+        msg: "No registry mirrors configured or grep returned no results"
+      when: mirror_status.rc != 0 or mirror_status.stdout == ""
+    
+    # ============================================
+    # 9. TEST ACTUAL PULLS (DEMONSTRATE MIRROR USAGE)
+    # ============================================
+    
+    - name: Test actual Quay.io pull (should use mirror)
+      ansible.builtin.command:
+        cmd: docker pull quay.io/prometheus/prometheus:latest
+      register: quay_actual_pull
+      changed_when: false
+      ignore_errors: yes
+      timeout: 120
+    
+    - name: Clean up Quay actual pull image
+      ansible.builtin.command:
+        cmd: docker rmi quay.io/prometheus/prometheus:latest
+      when: quay_actual_pull.rc == 0
+      changed_when: false
+      ignore_errors: yes
+    
+    - name: Test actual Docker Hub pull (should use mirror)
+      ansible.builtin.command:
+        cmd: docker pull ubuntu:latest
+      register: dockerhub_actual_pull
+      changed_when: false
+      ignore_errors: yes
+      timeout: 120
+    
+    - name: Clean up Docker Hub actual pull image
+      ansible.builtin.command:
+        cmd: docker rmi ubuntu:latest
+      when: dockerhub_actual_pull.rc == 0
+      changed_when: false
+      ignore_errors: yes
+    
+    # ============================================
+    # 10. FINAL VERIFICATION
+    # ============================================
+    - name: Final verification message
+      ansible.builtin.debug:
+        msg: |
+          ===========================================================================
+          🎉 Configuration Complete on {{ inventory_hostname }}!
+          ===========================================================================
+          
+          Your Docker daemon is now configured with TWO HTTPS registry mirrors:
+          
+          1. Quay.io → {{ quay_mirror_url }}
+          2. Docker Hub → {{ dockerhub_mirror_url }}
+          
+          ✅ Benefits:
+          - All quay.io images will be cached locally via HTTPS
+          - All Docker Hub images will be cached locally via HTTPS
+          - Significantly faster subsequent pulls
+          - Avoid Docker Hub rate limits
+          - Reduced bandwidth usage
+          - Secure communication with Harbor (valid SSL certificate)
+          
+          📋 Next Steps for Kolla-Ansible:
+          ---------------------------------
+          1. Verify configuration: cat /etc/docker/daemon.json
+          2. Check mirrors: docker info | grep -A 10 "Registry Mirrors"
+          3. Test pull: docker pull ubuntu:latest
+          4. Run Kolla pull: kolla-ansible pull
+          5. Deploy OpenStack: kolla-ansible deploy
+          
+          🔍 Monitor the cache in Harbor UI:
+          - Login to Harbor at https://{{ harbor_server }}
+          - Go to Projects → {{ quay_cache_project }} → Artifacts
+          - Go to Projects → {{ dockerhub_cache_project }} → Artifacts
+          
+          🔐 SSL Certificate Status:
+          - Using valid SSL certificate (not self-signed)
+          - Docker will automatically trust the certificate
+          - No manual certificate installation required
+          
+          ===========================================================================
